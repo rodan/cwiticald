@@ -15,7 +15,7 @@ PROJ = cwiticald
 CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall -Wno-switch
 CFLAGS		+= -fno-force-addr -finline-limit=1 -fno-schedule-insns
 CFLAGS		+= -fshort-enums -Wl,-Map=output.map
-#LDFLAGS		= -lm
+LDFLAGS		= -lpthread
 
 CFLAGS_REL	+= -O2 -pipe
 #LDFLAGS_REL	+= -Wl,--gc-sections -Wl,-s
