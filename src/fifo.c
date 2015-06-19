@@ -20,7 +20,7 @@ fifo_t *create_fifo(const size_t size)
     fifo->buffer = buffer;
     fifo->head = 0;
     fifo->tail = 0;
-    fifo->free = size-1;
+    fifo->free = size - 1;
     fifo->size = size;
 
     return fifo;
