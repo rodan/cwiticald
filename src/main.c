@@ -20,9 +20,7 @@ int endofworld = 0;
 
 void *serverthread(void *parm);
 
-pthread_mutex_t mut;
-
-#define PROTOPORT         2002
+#define PROTOPORT         2000
 #define QLEN              6
 
 int visits = 0;
@@ -111,18 +109,17 @@ void *harvest(void *f)
 
 int main()
 {
-    //pkt_t *p;
     fifo_t *fifo;
     pthread_t harvest_thread;
 
-    struct hostent *ptrh;       /* pointer to a host table entry */
-    struct protoent *ptrp;      /* pointer to a protocol table entry */
-    struct sockaddr_in srv_addr;     /* structure to hold server's address */
-    struct sockaddr_in cl_addr;     /* structure to hold client's address */
-    int sd, sd2;                /* socket descriptors */
-    int port;                   /* protocol port number */
-    int alen;                   /* length of address */
-    pthread_t tid;              /* variable to hold thread ID */
+    //struct hostent *ptrh;       // pointer to a host table entry
+    struct protoent *ptrp;      // pointer to a protocol table entry
+    struct sockaddr_in srv_addr;     // structure to hold server's address
+    struct sockaddr_in cl_addr;     // structure to hold client's address
+    int sd, sd2;                // socket descriptors
+    int port;                   // protocol port number
+    socklen_t alen;                   // length of address
+    pthread_t tid;              // variable to hold thread ID
 
     // initialize the large buffer
     fifo = create_fifo(FIFO_SZ);
@@ -133,38 +130,35 @@ int main()
         return EXIT_FAILURE;
     }
 
-    pthread_mutex_init(&mut, NULL);
+    //pthread_mutex_init(&mut, NULL);
     memset((char *)&srv_addr, 0, sizeof(srv_addr));       /* clear sockaddr structure   */
     srv_addr.sin_family = AF_INET;   /* set family to Internet     */
     srv_addr.sin_addr.s_addr = INADDR_ANY;   /* set the local IP address */
 
-    /* Check  command-line argument for protocol port and extract      */
-    /* port number if one is specfied.  Otherwise, use the default     */
-    /* port value given by constant PROTOPORT                          */
-
-    port = PROTOPORT;           /* use default port number   */
+    port = PROTOPORT;
     srv_addr.sin_port = htons((u_short) port);
 
-    /* Map TCP transport protocol name to protocol number */
-    if (((int)(ptrp = getprotobyname("tcp"))) == 0) {
-        fprintf(stderr, "cannot map \"tcp\" to protocol number");
+    // map TCP transport protocol name to protocol number
+    //if (((int)(ptrp = getprotobyname("tcp"))) == 0) {
+    if (((ptrp = getprotobyname("tcp"))) == NULL) {
+        fprintf(stderr, "cannot map \"tcp\" to protocol number\n");
         exit(1);
     }
 
-    /* Create a socket */
+    // create a socket
     sd = socket(PF_INET, SOCK_STREAM, ptrp->p_proto);
     if (sd < 0) {
         fprintf(stderr, "socket creation failed\n");
         exit(1);
     }
 
-    /* Bind a local address to the socket */
+    // bind a local address to the socket
     if (bind(sd, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0) {
         fprintf(stderr, "bind failed\n");
         exit(1);
     }
 
-    /* Specify a size of request queue */
+    // specify a size of request queue
     if (listen(sd, QLEN) < 0) {
         fprintf(stderr, "listen failed\n");
         exit(1);
@@ -172,13 +166,13 @@ int main()
 
     alen = sizeof(cl_addr);
 
-    /* Main server loop - accept and handle requests */
+    // main server loop - accept and handle requests
     fprintf(stderr, "Server up and running.\n");
     while (1) {
 
         printf("SERVER: Waiting for contact ...\n");
 
-        if ((sd2 = accept(sd, (struct sockaddr *)&cl_addr, &alen)) < 0) {
+        if ((sd2 = (int)accept(sd, (struct sockaddr *)&cl_addr, &alen)) < 0) {
             fprintf(stderr, "accept failed\n");
             exit(1);
         }
@@ -188,40 +182,34 @@ int main()
         p->fifo = fifo;
         pthread_create(&tid, NULL, serverthread, (void *)p);
     }
+
     close(sd);
 
     if (pthread_join(harvest_thread, NULL)) {
         fprintf(stderr, "Error joining thread\n");
         return EXIT_FAILURE;
     }
+
     //printf("main process: head=%d\n", (unsigned int) p.fifo->head);
     return EXIT_SUCCESS;
 }
 
 void *serverthread(void *parm)
 {
-    int tvisits;
-    char buf[100];              /* buffer for string the server sends */
+    char buf[100];
     uint8_t rng_out[255];
-    //int tsd;
 
-    //tsd = (int)parm;
-   
     pkt_t *p = (pkt_t *) parm;
 
-    pthread_mutex_lock(&mut);
-    tvisits = ++visits;
-    pthread_mutex_unlock(&mut);
-
-    //pthread_mutex_lock(&fifo_mutex);
+    pthread_mutex_lock(&fifo_mutex);
     //if (p_ptr->fifo->free > 255) {
         fifo_pop(p->fifo, rng_out, 255);
     //} else {
     //    fifo_push(p_ptr->fifo, rng_buffer, p_ptr->fifo->free);
     //}
-    //pthread_mutex_unlock(&fifo_mutex);
+    pthread_mutex_unlock(&fifo_mutex);
 
-    sprintf(buf, "size is %d\n", p->fifo->free);
+    sprintf(buf, "%d free\n", (unsigned int) p->fifo->free);
 
     printf("SERVER thread: %s", buf);
     send(p->sd, buf, strlen(buf), 0);
