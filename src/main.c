@@ -11,7 +11,7 @@
 #include "fips.h"
 
 pthread_mutex_t fifo_mutex = PTHREAD_MUTEX_INITIALIZER;
-int endofworld=0;
+int endofworld = 0;
 
 static int rng_read(const int fd, void *buf, const size_t size)
 {
@@ -22,22 +22,23 @@ static int rng_read(const int fd, void *buf, const size_t size)
     while (sz) {
         r = read(fd, buf + off, sz);
         if (r < 0) {
-            if ((errno == EAGAIN) || (errno == EINTR)) continue;
+            if ((errno == EAGAIN) || (errno == EINTR))
+                continue;
             break;
-		} else if (!r) {
-	        fprintf(stderr,	"entropy source drained\n");
-			return EXIT_FAILURE;
-		}
- 		off += r;
-		sz -= r;
+        } else if (!r) {
+            fprintf(stderr, "entropy source drained\n");
+            return EXIT_FAILURE;
+        }
+        off += r;
+        sz -= r;
     }
 
     if (sz) {
-		fprintf(stderr,	"error reading input: %s\n", strerror(errno));
-		return EXIT_FAILURE;
-	}
+        fprintf(stderr, "error reading input: %s\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
 
-	return EXIT_SUCCESS;
+    return EXIT_SUCCESS;
 }
 
 // thread that feeds the random data into a buffer
@@ -55,32 +56,37 @@ void *harvest(void *pkt_ptr)
     int fips_result;
     int initial_data;
 
-    fd = open("/dev/ttyACM0", O_RDONLY);
+    fd = open("/dev/truerng", O_RDONLY);
     //fd = open("/dev/zero", O_RDONLY);
     rng_read(fd, &dev_buff, 4);
-    initial_data = dev_buff[0] | (dev_buff[1] << 8) | (dev_buff[2] << 16) | (dev_buff[3] << 24) ;
+    initial_data =
+        dev_buff[0] | (dev_buff[1] << 8) | (dev_buff[2] << 16) | (dev_buff[3] <<
+                                                                  24);
     fips_init(&fipsctx, initial_data);
 
     while (!endofworld) {
-        rng_read(fd, rng_buffer, sizeof(rng_buffer));
-        fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
+        // if there is space in the fifo
+        while (p_ptr->fifo->free) {
+            rng_read(fd, rng_buffer, sizeof(rng_buffer));
+            fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
 
-        if (fips_result) {
-            fprintf(stderr, "fips test failed\n");
-        } else {
-            //fprintf(stdout, "fips test ok\n");
+            if (fips_result) {
+                // fips test failed
+                fprintf(stderr, "fips test failed\n");
+            } else {
+                pthread_mutex_lock(&fifo_mutex);
+                if (p_ptr->fifo->free > FIPS_RNG_BUFFER_SIZE) {
+                    fifo_push(p_ptr->fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                } else {
+                    fifo_push(p_ptr->fifo, rng_buffer, p_ptr->fifo->free);
+                }
+                pthread_mutex_unlock(&fifo_mutex);
+                fprintf(stdout, "%d bytes free\n", (unsigned int) p_ptr->fifo->free);
+            }
         }
+        // fifo is now full, get some rest
+        usleep(200000);
     }
-
-    /*
-    if (rl == 32) {
-        pthread_mutex_lock(&fifo_mutex);
-        for (i = 0; i < 32; i++) {
-            fifo_push_byte(p_ptr->fifo, sbuff[i]);
-        }
-        pthread_mutex_unlock(&fifo_mutex);
-    }
-    */
 
     close(fd);
     return NULL;
@@ -103,7 +109,6 @@ int main()
         return EXIT_FAILURE;
     }
 
-    printf("main process: head=%d\n", p.fifo->head);
+    printf("main process: head=%d\n", (unsigned int) p.fifo->head);
     return EXIT_SUCCESS;
 }
-

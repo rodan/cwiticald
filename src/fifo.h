@@ -9,6 +9,7 @@ typedef struct {
     size_t head;
     size_t tail;
     size_t size;
+    size_t free;
 } fifo_t;
 
 //#define CHECK_FIFO_NULL(fifo) MAC_FUNC(if (fifo == NULL) return 0;)

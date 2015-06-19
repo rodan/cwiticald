@@ -20,6 +20,7 @@ fifo_t *create_fifo(const size_t size)
     fifo->buffer = buffer;
     fifo->head = 0;
     fifo->tail = 0;
+    fifo->free = size-1;
     fifo->size = size;
 
     return fifo;
@@ -37,6 +38,7 @@ size_t fifo_push_byte(fifo_t * fifo, const uint8_t byte)
 
     fifo->buffer[fifo->head] = byte;
     fifo->head++;
+    fifo->free--;
     if (fifo->head == fifo->size) {
         fifo->head = 0;
     }
@@ -70,6 +72,7 @@ size_t fifo_pop_byte(fifo_t * fifo, uint8_t * byte)
     *byte = fifo->buffer[fifo->tail];
 
     fifo->tail++;
+    fifo->free++;
     if (fifo->tail == fifo->size) {
         fifo->tail = 0;
     }
