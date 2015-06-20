@@ -7,6 +7,7 @@
 
 typedef struct {
     int sd;
+    fd_set read_fd_set;
     fifo_t *fifo;
 } pkt_t;
 
