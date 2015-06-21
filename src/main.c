@@ -4,7 +4,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-
+#include <signal.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -12,18 +12,37 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <getopt.h>
 #include "main.h"
 #include "fifo.h"
 #include "fips.h"
 
 pthread_mutex_t fifo_mutex = PTHREAD_MUTEX_INITIALIZER;
-int exit_now = 0;
+static volatile int keep_running = 1;
 
-#define TRUE 1
-#define FALSE 0
-#define PORT 41300
 
-int visits = 0;
+///////////////////////////////
+// default values that can be changed via 
+// command line arguments
+//
+
+int debug = 0;
+int max_clients = 20;
+int port = 41300;
+char *ip = "127.0.0.1";
+char *rng_device = "/dev/truerng";
+///////////////////////////////
+
+
+void sig_handler(int signo)
+{
+    if (signo == SIGINT) {
+        fprintf(stderr, " exiting ...\n");
+        keep_running = 0;
+    } else if (signo == SIGUSR1) {
+        // show some stats
+    }
+}
 
 static int rng_read(const int fd, void *buf, const size_t size)
 {
@@ -69,14 +88,11 @@ void *harvest(void *param)
     int fips_result;
     int initial_data;
 
-    //fd = open("/dev/urandom", O_RDONLY);
-    fd = open("/dev/truerng", O_RDONLY);
-    //fd = open("/dev/vcs5", O_RDONLY);
-    //fd = open("/dev/zero", O_RDONLY);
+    fd = open(rng_device, O_RDONLY);
 
     if (fd < 0) {
         fprintf(stderr, "critical error: cannot open RNG device\n");
-        exit_now = 1;
+        keep_running = 0;
         pthread_exit(0);
     }
 
@@ -86,15 +102,16 @@ void *harvest(void *param)
                                                                   24);
     fips_init(&fipsctx, initial_data);
 
-    while ( ! exit_now) {
+    while ( keep_running ) {
         // if there is space in the fifo
-        while (fifo->free) {
+        while ( fifo->free && keep_running ) {
             rng_read(fd, rng_buffer, sizeof(rng_buffer));
             fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
 
             if (fips_result) {
                 // fips test failed
-                //fprintf(stderr, "fips test failed\n");
+                fprintf(stderr, "fips test failed\n");
+                sleep(1);
             } else {
                 pthread_mutex_lock(&fifo_mutex);
                 if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
@@ -110,6 +127,8 @@ void *harvest(void *param)
         usleep(10000);
     }
 
+    fprintf(stderr, "harvest thread exiting\n");
+
     close(fd);
     return NULL;
 }
@@ -122,8 +141,11 @@ void *server(void *param)
 
     pkt_t *p = (pkt_t *) param;
 
+    if (fcntl(p->sd, F_SETFL, fcntl(p->sd, F_GETFL) | O_NONBLOCK) < 0) {
+        fprintf(stderr, "fcntl returned %s\n", strerror(errno));
+    }
     // longest request is 2 bytes long
-    if ((recv(p->sd, buff_rx, 2, 0) == 2)) {
+    if ((recv(p->sd, buff_rx, 2, MSG_DONTWAIT) == 2)) {
         //fprintf(stdout, " %d: received cmd %02x%02x\n", p->sd, buff_rx[0], buff_rx[1]);
 
         // EGD protocol
@@ -140,11 +162,11 @@ void *server(void *param)
                     fifo_pop(p->fifo, buff_tx, buff_rx[1]);
                     pthread_mutex_unlock(&fifo_mutex);
                     if ((send(p->sd, buff_tx, buff_rx[1], 0) == buff_rx[1])) {
-                        fprintf(stdout, "%s sfd%d: %d bytes sent\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1]);
+                        fprintf(stdout, "%s %d: %d bytes sent\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1]);
                     }
                 } else {
                     pthread_mutex_unlock(&fifo_mutex);
-                    fprintf(stdout, "%s sfd%d: %d bytes requested, but only %d available\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1], (int) p->fifo->size - (int) p->fifo->free - 1);
+                    fprintf(stdout, "%s %d: %d bytes requested, but only %d available\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1], (int) p->fifo->size - (int) p->fifo->free - 1);
                     usleep(200000);
                     // FIXME - maybe client_socket and sd needs to be closed at this point?
                 }
@@ -152,11 +174,11 @@ void *server(void *param)
         } else if (buff_rx[0] == 0x03) { // write entropy
         } else if (buff_rx[0] == 0x04) { // report PID
         } else {
-            fprintf(stdout, "%s sfd%d: bogus packet received\n", inet_ntoa(p->addr->sin_addr), p->sd);
+            fprintf(stdout, "%s %d: bogus packet received\n", inet_ntoa(p->addr->sin_addr), p->sd);
             // bogus packet
         }
     } else {
-        fprintf(stdout, "%s sfd%d: connection closed\n", inet_ntoa(p->addr->sin_addr), p->sd);
+        fprintf(stdout, "%s %d: connection closed\n", inet_ntoa(p->addr->sin_addr), p->sd);
         *p->client_socket = 0;
         close(p->sd);
     }
@@ -168,7 +190,66 @@ void *server(void *param)
     return NULL;
 }
 
-int main()
+void parse_options(int argc, char *argv[])
+{
+    static const char short_options[] = "hed:i:p:m:";
+    static const struct option long_options[] = {
+        {.name = "help",.val = '?'},
+        {.name = "device",.has_arg = 1,.val = 'd'},
+        {.name = "ip",.has_arg = 1,.val = 'i'},
+        {.name = "port",.has_arg = 1,.val = 'p'},
+        {.name = "max-clients",.has_arg = 1,.val = 'm'},
+        {.name = "debug",.val = 'e'}
+    };
+    int option;
+
+    while ((option = getopt_long(argc, argv, short_options,
+                                 long_options, NULL)) != -1) {
+        switch (option) {
+        case 'h':
+            fprintf(stdout, "Usage: cwiticald [OPTION]\n\n");
+            fprintf(stdout,
+                    "Mandatory arguments to long options are mandatory for short options too.\n");
+            fprintf(stdout,
+                    "  -h, --help              this help\n"
+                    "  -d, --device=NAME       block file that outputs random data (default '/dev/truerng')\n"
+                    "  -i, --ip=IP             IP used for listening for connections (default '127.0.0.1')\n"
+                    "  -p, --port=NUM          port used (default '41300')\n"
+                    "  -m, --max-clients=NUM   maximum number of clients accepted (default '20')\n"
+                    "  -e, --debug             output extra info\n");
+            exit(EXIT_SUCCESS);
+            break;
+        case 'd':
+            rng_device = optarg;
+            break;
+        case 'i':
+            ip = optarg;
+            break;
+        case 'p':
+            port = atoi(optarg);
+            if (port < 1 || port > 65535) {
+                fprintf(stderr, "invalid port value\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 'm':
+            max_clients = atoi(optarg);
+            if (port < 1 || port > 65535) {
+                fprintf(stderr, "invalid max_clients value\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 'e':
+            break;
+        default:
+            fprintf(stderr, "unknown option: %c\n", option);
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+
+int main(int argc, char *argv[])
 {
     fifo_t *fifo;
     pthread_t harvest_thread;
@@ -176,12 +257,21 @@ int main()
 
     int opt = 1;
     int master_socket, sd, max_sd, addrlen, new_socket;
-    int max_clients = 30, activity;
-    uint8_t client_socket[30];
+    int activity;
+    uint8_t *client_socket;
     fd_set readfds;
     int i;
 
     struct sockaddr_in address;
+
+    if (signal(SIGINT, sig_handler) == SIG_ERR) {
+        fprintf(stderr, "\ncan't catch SIGINT\n");
+    }
+    if (signal(SIGUSR1, sig_handler) == SIG_ERR) {
+        fprintf(stderr, "\ncan't catch SIGUSR1\n");
+    }
+
+    parse_options(argc, argv);
 
     fifo = create_fifo(FIFO_SZ);
 
@@ -191,40 +281,38 @@ int main()
         return EXIT_FAILURE;
     }
 
-    //memset((char *)&srv_addr, 0, sizeof(srv_addr));     /* clear sockaddr structure   */
-    for (i = 0; i < max_clients; i++) {
-        client_socket[i] = 0;
-    }
+    client_socket = (uint8_t *)malloc(max_clients * sizeof(uint8_t));
+    memset((uint8_t *)client_socket, 0, max_clients * sizeof(uint8_t));
 
     if ((master_socket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
         perror("socket failed");
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
     if (setsockopt
         (master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
          sizeof(opt)) < 0) {
         perror("setsockopt");
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_addr.s_addr = inet_addr(ip);
+    address.sin_port = htons(port);
 
     if (bind(master_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     // try to specify maximum of 3 pending connections for the master socket
     if (listen(master_socket, 3) < 0) {
         perror("listen");
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     // accept the incoming connection
     addrlen = sizeof(address);
-    puts("Waiting for connections ...");
-    while ( ! exit_now ) {
+
+    while ( keep_running ) {
         FD_ZERO(&readfds);
         FD_SET(master_socket, &readfds);
         max_sd = master_socket;
@@ -241,6 +329,7 @@ int main()
                 max_sd = sd;
             }
         }
+
         // wait for activity on one of the sockets , timeout is NULL , so wait indefinitely
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
         if ((activity < 0) && (errno != EINTR)) {
@@ -252,13 +341,11 @@ int main()
                  accept(master_socket, (struct sockaddr *)&address,
                         (socklen_t *) & addrlen)) < 0) {
                 fprintf(stderr, " E accept failed\n");
-                exit(EXIT_FAILURE);
+                return EXIT_FAILURE;
             }
             // inform user of socket number - used in send and receive commands
-            printf
-                (" * new connection , socket fd is %d, %s:%d \n",
-                 new_socket, inet_ntoa(address.sin_addr),
-                 ntohs(address.sin_port));
+            //printf (" * new connection , socket fd is %d, %s:%d \n",
+            //     new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
 
             // add new socket to array of sockets
             for (i = 0; i < max_clients; i++) {
@@ -284,18 +371,25 @@ int main()
                 p->fifo = fifo;
                 p->addr = addr;
                 p->client_socket = &client_socket[i];
+
+                if (fcntl(sd, F_SETFL, fcntl(sd, F_GETFL) | O_NONBLOCK) < 0) {
+                    fprintf(stderr, "fcntl returned %s\n", strerror(errno));
+                }
+
                 //pthread_create(&server_thread, NULL, server, (void *)p);
                 server((void *)p);
             }
         }
     }
 
+    fprintf(stderr, "main thread exiting\n");
+
     if (pthread_join(harvest_thread, NULL)) {
         fprintf(stderr, "Error joining thread\n");
-        return EXIT_FAILURE;
     }
 
     free(fifo->buffer);
+    free(client_socket);
 
     return EXIT_SUCCESS;
 }
