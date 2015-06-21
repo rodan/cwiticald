@@ -31,6 +31,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
         socklen_t addr_len = sizeof(addr);
         int ip_present = 0;
         int fd, err;
+        int avail;
 
         fd = bufferevent_getfd(bev);
         if (fd > 0) {
@@ -45,10 +46,43 @@ void read_cb(struct bufferevent *bev, void *ctx)
 
         if (buff_rx[0] == 0x00) {       // get entropy level
         } else if (buff_rx[0] == 0x01) {        // read entropy nonblocking
+            // client requests buff_rx[1] bytes of entropy
+            if (buff_rx[1]) {
+                pthread_mutex_lock(&fifo_mutex);
+                avail=(int)fifo->size - (int)fifo->free - 1;
+                if (avail + 1 > buff_rx[1]) {
+                    // there is enough entropy in the fifo buffer
+                    fifo_pop(fifo, buff_tx, buff_rx[1]);
+                    pthread_mutex_unlock(&fifo_mutex);
+                    bufferevent_write(bev, &buff_rx[1], 1);
+                    if ((bufferevent_write(bev, buff_tx, buff_rx[1]) == 0)) {
+                        if (ip_present) {
+                            fprintf(stdout, "%s %d: nonblocking_get %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
+                        } else {
+                            fprintf(stdout, "nonblocking_get %d bytes sent\n", buff_rx[1]);
+                        }
+                    }
+                } else {
+                    // send whatever we have available in the fifo
+                    fifo_pop(fifo, buff_tx, avail);
+                    pthread_mutex_unlock(&fifo_mutex);
+                    bufferevent_write(bev, &avail, 1);
+                    if ((bufferevent_write(bev, buff_tx, avail) == 0)) {
+                        if (ip_present) {
+                            fprintf(stdout, "%s %d: %d bytes requested, but only %d sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], avail);
+                        } else {
+                            fprintf(stdout,
+                                    "%d bytes requested, but only %d sent\n",
+                                    buff_rx[1], avail);
+                        }
+                    }
+                }
+            }
         } else if (buff_rx[0] == 0x02) {        // read entropy blocking
             // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
+                avail=(int)fifo->size - (int)fifo->free - 1;
                 if (fifo->size - fifo->free > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(fifo, buff_tx, buff_rx[1]);
@@ -56,19 +90,19 @@ void read_cb(struct bufferevent *bev, void *ctx)
 
                     if ((bufferevent_write(bev, buff_tx, buff_rx[1]) == 0)) {
                         if (ip_present) {
-                            fprintf(stdout, "%s %d: %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
+                            fprintf(stdout, "%s %d: blocking_get %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
                         } else {
-                            fprintf(stdout, "%d bytes sent\n", buff_rx[1]);
+                            fprintf(stdout, "blocking_get %d bytes sent\n", buff_rx[1]);
                         }
                     }
                 } else {
                     pthread_mutex_unlock(&fifo_mutex);
                     if (ip_present) {
-                        fprintf(stdout, "%s %d: %d bytes requested, but only %d available\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], (int)fifo->size - (int)fifo->free - 1);
+                        fprintf(stdout, "%s %d: %d bytes requested, but only %d available\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], avail);
                     } else {
                     fprintf(stdout,
                             "%d bytes requested, but only %d available\n",
-                            buff_rx[1], (int)fifo->size - (int)fifo->free - 1);
+                            buff_rx[1], avail);
                     }
                     //usleep(200000);
                 }
