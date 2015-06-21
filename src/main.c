@@ -17,7 +17,7 @@
 #include "fips.h"
 
 pthread_mutex_t fifo_mutex = PTHREAD_MUTEX_INITIALIZER;
-int endofworld = 0;
+int exit_now = 0;
 
 #define TRUE 1
 #define FALSE 0
@@ -69,16 +69,24 @@ void *harvest(void *param)
     int fips_result;
     int initial_data;
 
-    fd = open("/dev/urandom", O_RDONLY);
-    //fd = open("/dev/truerng", O_RDONLY);
+    //fd = open("/dev/urandom", O_RDONLY);
+    fd = open("/dev/truerng", O_RDONLY);
+    //fd = open("/dev/vcs5", O_RDONLY);
     //fd = open("/dev/zero", O_RDONLY);
+
+    if (fd < 0) {
+        fprintf(stderr, "critical error: cannot open RNG device\n");
+        exit_now = 1;
+        pthread_exit(0);
+    }
+
     rng_read(fd, &dev_buff, 4);
     initial_data =
         dev_buff[0] | (dev_buff[1] << 8) | (dev_buff[2] << 16) | (dev_buff[3] <<
                                                                   24);
     fips_init(&fipsctx, initial_data);
 
-    while (!endofworld) {
+    while ( ! exit_now) {
         // if there is space in the fifo
         while (fifo->free) {
             rng_read(fd, rng_buffer, sizeof(rng_buffer));
@@ -86,7 +94,7 @@ void *harvest(void *param)
 
             if (fips_result) {
                 // fips test failed
-                fprintf(stderr, "fips test failed\n");
+                //fprintf(stderr, "fips test failed\n");
             } else {
                 pthread_mutex_lock(&fifo_mutex);
                 if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
@@ -95,7 +103,7 @@ void *harvest(void *param)
                     fifo_push(fifo, rng_buffer, fifo->free);
                 }
                 pthread_mutex_unlock(&fifo_mutex);
-                fprintf(stdout, "%d bytes free\n", (unsigned int)fifo->free);
+                fprintf(stdout, "%d/%d bytes of entropy in buffer\n", (unsigned int) fifo->size - (unsigned int) fifo->free - 1, (unsigned int)fifo->size - 1);
             }
         }
         // fifo is now full, get some rest
@@ -107,60 +115,57 @@ void *harvest(void *param)
 }
 
 // thread that feeds entropy to the TCP clients
-//void *server(void *param)
-int server(void *param)
+void *server(void *param)
 {
     uint8_t buff_rx[2];
     uint8_t buff_tx[255];
 
     pkt_t *p = (pkt_t *) param;
 
-    fprintf(stdout, " %d: handled\n", p->sd);
+    // longest request is 2 bytes long
     if ((recv(p->sd, buff_rx, 2, 0) == 2)) {
-        fprintf(stdout, " %d: received cmd %02x%02x\n", p->sd, buff_rx[0], buff_rx[1]);
+        //fprintf(stdout, " %d: received cmd %02x%02x\n", p->sd, buff_rx[0], buff_rx[1]);
 
         // EGD protocol
         // see http://egd.sourceforge.net/ for details
 
-        if (buff_rx[0] == 0x00) {
-        } else if (buff_rx[0] == 0x01) {
-        } else if (buff_rx[0] == 0x02) {
-            fprintf(stdout, " %d: r req for %d bytes\n", p->sd, buff_rx[1]);
-            // client needs buff_rx[1] bytes of random
+        if (buff_rx[0] == 0x00) { // get entropy level
+        } else if (buff_rx[0] == 0x01) { // read entropy nonblocking
+        } else if (buff_rx[0] == 0x02) { // read entropy blocking
+            // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
                 if (p->fifo->size - p->fifo->free > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(p->fifo, buff_tx, buff_rx[1]);
                     pthread_mutex_unlock(&fifo_mutex);
+                    if ((send(p->sd, buff_tx, buff_rx[1], 0) == buff_rx[1])) {
+                        fprintf(stdout, "%s sfd%d: %d bytes sent\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1]);
+                    }
                 } else {
                     pthread_mutex_unlock(&fifo_mutex);
-                    // FIXME
+                    fprintf(stdout, "%s sfd%d: %d bytes requested, but only %d available\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1], (int) p->fifo->size - (int) p->fifo->free - 1);
                     usleep(200000);
-                }
-                if ((send(p->sd, buff_tx, buff_rx[1], 0) == buff_rx[1])) {
-                    fprintf(stdout, " %d: %d bytes sent ok\n", p->sd, buff_rx[1]);
+                    // FIXME - maybe client_socket and sd needs to be closed at this point?
                 }
             }
-        } else if (buff_rx[0] == 0x03) {
-            // client wants to send us entropy
-            // 'fuck off!' to that
-        } else if (buff_rx[0] == 0x04) {
-            //
+        } else if (buff_rx[0] == 0x03) { // write entropy
+        } else if (buff_rx[0] == 0x04) { // report PID
         } else {
-            fprintf(stdout, " ! bogus packet received\n");
+            fprintf(stdout, "%s sfd%d: bogus packet received\n", inet_ntoa(p->addr->sin_addr), p->sd);
             // bogus packet
         }
     } else {
+        fprintf(stdout, "%s sfd%d: connection closed\n", inet_ntoa(p->addr->sin_addr), p->sd);
+        *p->client_socket = 0;
         close(p->sd);
-        fprintf(stdout, " ! recv is invalid for %d\n", p->sd);
-        return -1;
     }
 
+    free(p->addr);
     free(p);
+
     //pthread_exit(0);
-    //return NULL;
-    return 0;
+    return NULL;
 }
 
 int main()
@@ -169,24 +174,15 @@ int main()
     pthread_t harvest_thread;
     //pthread_t server_thread;
 
-    //struct hostent *ptrh;     // pointer to a host table entry
-    //struct protoent *ptrp;      // pointer to a protocol table entry
-    //struct sockaddr_in srv_addr;        // structure to hold server's address
-    //struct sockaddr_in cl_addr; // structure to hold client's address
-    //int sd, sd2;                // socket descriptors
-    //int port;                   // protocol port number
-    //socklen_t alen;             // length of address
-
     int opt = 1;
-    int master_socket, addrlen, new_socket, client_socket[30], max_clients =
-        30, activity, i, sd;
-    int max_sd;
+    int master_socket, sd, max_sd, addrlen, new_socket;
+    int max_clients = 30, activity;
+    uint8_t client_socket[30];
     fd_set readfds;
+    int i;
 
     struct sockaddr_in address;
-    //char buffer[1025];
 
-    // initialize the large buffer
     fifo = create_fifo(FIFO_SZ);
 
     // thread that feeds the random data into the buffer
@@ -194,6 +190,7 @@ int main()
         fprintf(stderr, "Error creating thread\n");
         return EXIT_FAILURE;
     }
+
     //memset((char *)&srv_addr, 0, sizeof(srv_addr));     /* clear sockaddr structure   */
     for (i = 0; i < max_clients; i++) {
         client_socket[i] = 0;
@@ -203,52 +200,53 @@ int main()
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
+
     if (setsockopt
         (master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
          sizeof(opt)) < 0) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
-//type of socket created
+
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
-//bind the socket to localhost port 8888
+
     if (bind(master_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
-//try to specify maximum of 3 pending connections for the master socket
+    // try to specify maximum of 3 pending connections for the master socket
     if (listen(master_socket, 3) < 0) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
-//accept the incoming connection
+    // accept the incoming connection
     addrlen = sizeof(address);
     puts("Waiting for connections ...");
-    while (TRUE) {
-//clear the socket set
+    while ( ! exit_now ) {
         FD_ZERO(&readfds);
-//add master socket to set
         FD_SET(master_socket, &readfds);
         max_sd = master_socket;
-//add child sockets to set
+        // add child sockets to set
         for (i = 0; i < max_clients; i++) {
-//socket descriptor
+            // socket descriptor
             sd = client_socket[i];
-//if valid socket descriptor then add to read list
-            if (sd > 0)
+            // if valid socket descriptor then add to read list
+            if (sd > 0) {
                 FD_SET(sd, &readfds);
-//highest file descriptor number, need it for the select function
-            if (sd > max_sd)
+            }
+            // highest file descriptor number, need it for the select function
+            if (sd > max_sd) {
                 max_sd = sd;
+            }
         }
-//wait for an activity on one of the sockets , timeout is NULL , so wait indefinitely
+        // wait for activity on one of the sockets , timeout is NULL , so wait indefinitely
         activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
         if ((activity < 0) && (errno != EINTR)) {
             printf(" ! select error\n");
         }
-//If something happened on the master socket , then its an incoming connection
+        // if something happened on the master socket , then its an incoming connection
         if (FD_ISSET(master_socket, &readfds)) {
             if ((new_socket =
                  accept(master_socket, (struct sockaddr *)&address,
@@ -256,69 +254,38 @@ int main()
                 fprintf(stderr, " E accept failed\n");
                 exit(EXIT_FAILURE);
             }
-//inform user of socket number - used in send and receive commands
+            // inform user of socket number - used in send and receive commands
             printf
                 (" * new connection , socket fd is %d, %s:%d \n",
                  new_socket, inet_ntoa(address.sin_addr),
                  ntohs(address.sin_port));
 
-/*
-//send new connection greeting message
-            if (send(new_socket, message, strlen(message), 0) !=
-                strlen(message)) {
-                perror("send");
-            }
-*/
-//add new socket to array of sockets
+            // add new socket to array of sockets
             for (i = 0; i < max_clients; i++) {
-//if position is empty
+                // if position is empty
                 if (client_socket[i] == 0) {
                     client_socket[i] = new_socket;
-                    printf(" * adding to list of sockets as %d\n", i);
-
-                    printf(" %d: master IO activity\n", new_socket);
-
-/*
-                    pkt_t *p = (pkt_t *) malloc(sizeof(pkt_t));
-                    p->sd = new_socket;
-                    p->fifo = fifo;
-                    //pthread_create(&server_thread, NULL, server, (void *)p);
-*/
-
+                    //printf(" * adding to list of sockets as %d\n", i);
+                    //printf(" %d: master IO activity\n", new_socket);
                     break;
                 }
             }
         }
-//else its some IO operation on some other socket :)
+        // else its some IO operation on some other socket :)
         for (i = 0; i < max_clients; i++) {
             sd = client_socket[i];
             if (FD_ISSET(sd, &readfds)) {
-
-                printf(" %d: IO activity\n", sd);
+                struct sockaddr_in *addr;
+                //printf(" %d: IO activity\n", sd);
                 pkt_t *p = (pkt_t *) malloc(sizeof(pkt_t));
+                addr = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
+                memcpy(addr, &address, sizeof(address));
                 p->sd = sd;
                 p->fifo = fifo;
+                p->addr = addr;
+                p->client_socket = &client_socket[i];
                 //pthread_create(&server_thread, NULL, server, (void *)p);
-                if (server((void *)p) == -1) {
-                    close(sd);
-                    client_socket[i] = 0;
-                }
-
-/*
-//Check if it was for closing , and also read the incoming message
-                if ((valread = read(sd, buffer, 1024)) == 0) {
-//Somebody disconnected , get his details and print
-                    getpeername(sd, (struct sockaddr *)&address,
-                                (socklen_t *) & addrlen);
-                    printf("Host disconnected , ip %s , port %d \n",
-                           inet_ntoa(address.sin_addr),
-                           ntohs(address.sin_port));
-//Close the socket and mark as 0 in list for reuse
-                    close(sd);
-                    client_socket[i] = 0;
-                } else {
-                }
-*/
+                server((void *)p);
             }
         }
     }
@@ -327,6 +294,9 @@ int main()
         fprintf(stderr, "Error joining thread\n");
         return EXIT_FAILURE;
     }
-    //printf("main process: head=%d\n", (unsigned int) p.fifo->head);
+
+    free(fifo->buffer);
+
     return EXIT_SUCCESS;
 }
+

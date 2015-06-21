@@ -4,7 +4,7 @@
 
 fifo_t *create_fifo(const size_t size)
 {
-    uint8_t *buffer = (uint8_t *) malloc(size);
+    uint8_t *buffer = (uint8_t *) malloc(size+1);
 
     if (buffer == NULL) {
         return NULL;
@@ -20,8 +20,8 @@ fifo_t *create_fifo(const size_t size)
     fifo->buffer = buffer;
     fifo->head = 0;
     fifo->tail = 0;
-    fifo->free = size - 1;
-    fifo->size = size;
+    fifo->free = size;
+    fifo->size = size + 1;
 
     return fifo;
 }
