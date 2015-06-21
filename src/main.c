@@ -192,16 +192,19 @@ void *server(void *param)
 
 void parse_options(int argc, char *argv[])
 {
-    static const char short_options[] = "hed:i:p:m:";
+    static const char short_options[] = "hed:i:p:m:b:";
     static const struct option long_options[] = {
         {.name = "help",.val = '?'},
         {.name = "device",.has_arg = 1,.val = 'd'},
         {.name = "ip",.has_arg = 1,.val = 'i'},
         {.name = "port",.has_arg = 1,.val = 'p'},
         {.name = "max-clients",.has_arg = 1,.val = 'm'},
+        {.name = "buffer-size",.has_arg = 1,.val = 'b'},
         {.name = "debug",.val = 'e'}
     };
     int option;
+
+    fifo_size = 100000;
 
     while ((option = getopt_long(argc, argv, short_options,
                                  long_options, NULL)) != -1) {
@@ -216,6 +219,7 @@ void parse_options(int argc, char *argv[])
                     "  -i, --ip=IP             IP used for listening for connections (default '127.0.0.1')\n"
                     "  -p, --port=NUM          port used (default '41300')\n"
                     "  -m, --max-clients=NUM   maximum number of clients accepted (default '20')\n"
+                    "  -b, --buffer-size=NUM   buffer size used for storing entropy (default '100000')\n"
                     "  -e, --debug             output extra info\n");
             exit(EXIT_SUCCESS);
             break;
@@ -234,8 +238,15 @@ void parse_options(int argc, char *argv[])
             break;
         case 'm':
             max_clients = atoi(optarg);
-            if (port < 1 || port > 65535) {
+            if (max_clients < 1 || max_clients > 65535) {
                 fprintf(stderr, "invalid max_clients value\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 'b':
+            fifo_size = atoi(optarg);
+            if (fifo_size < 5000) {
+                fprintf(stderr, "invalid buffer-size value\n");
                 exit(EXIT_FAILURE);
             }
             break;
@@ -273,7 +284,7 @@ int main(int argc, char *argv[])
 
     parse_options(argc, argv);
 
-    fifo = create_fifo(FIFO_SZ);
+    fifo = create_fifo(fifo_size);
 
     // thread that feeds the random data into the buffer
     if (pthread_create(&harvest_thread, NULL, harvest, fifo)) {
@@ -385,7 +396,7 @@ int main(int argc, char *argv[])
     fprintf(stderr, "main thread exiting\n");
 
     if (pthread_join(harvest_thread, NULL)) {
-        fprintf(stderr, "Error joining thread\n");
+        fprintf(stderr, "error joining thread\n");
     }
 
     free(fifo->buffer);
