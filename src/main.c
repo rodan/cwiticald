@@ -19,11 +19,11 @@
 #include "fips.h"
 #include "libevent_glue.h"
 
-void sig_handler(int signo)
+void sig_handler(const int signo)
 {
     if (signo == SIGINT) {
-        fprintf(stderr, " exiting ...\n");
         keep_running = 0;
+        stop_libevent(evbase);
     } else if (signo == SIGUSR1) {
         // show some stats
     }
@@ -117,8 +117,7 @@ void *harvest(void *param)
     return NULL;
 }
 
-
-void parse_options(int argc, char *argv[])
+void parse_options(int argc, char **argv)
 {
     static const char short_options[] = "hed:i:p:m:b:";
     static const struct option long_options[] = {
@@ -128,7 +127,8 @@ void parse_options(int argc, char *argv[])
         {.name = "port",.has_arg = 1,.val = 'p'},
         {.name = "max-clients",.has_arg = 1,.val = 'm'},
         {.name = "buffer-size",.has_arg = 1,.val = 'b'},
-        {.name = "debug",.val = 'e'}
+        {.name = "debug",.val = 'e'},
+        {0, 0, 0, 0}
     };
     int option;
 
@@ -149,12 +149,17 @@ void parse_options(int argc, char *argv[])
                     "Mandatory arguments to long options are mandatory for short options too.\n");
             fprintf(stdout,
                     "  -h, --help              this help\n"
-                    "  -d, --device=NAME       block file that outputs random data (default '/dev/truerng')\n"
-                    "  -i, --ip=IP             IP used for listening for connections (default '127.0.0.1')\n"
-                    "  -p, --port=NUM          port used (default '41300')\n"
-                    "  -m, --max-clients=NUM   maximum number of clients accepted (default '20')\n"
-                    "  -b, --buffer-size=NUM   buffer size used for storing entropy (default '100000')\n"
-                    "  -e, --debug             output extra info\n");
+                    "  -d, --device=NAME       block file that outputs random data\n"
+                    "                               (default '%s')\n"
+                    "  -i, --ip=IP             IP used for listening for connections\n"
+                    "                               (default '%s')\n"
+                    "  -p, --port=NUM          port used\n"
+                    "                               (default '%d')\n"
+                    "  -m, --max-clients=NUM   maximum number of clients accepted\n"
+                    "                               (default '%d')\n"
+                    "  -b, --buffer-size=NUM   buffer size used for storing entropy\n"
+                    "                               (default '%d')\n"
+                    "  -e, --debug             output extra info\n", rng_device, ip, port, max_clients, fifo_size);
             exit(EXIT_SUCCESS);
             break;
         case 'd':
@@ -185,6 +190,7 @@ void parse_options(int argc, char *argv[])
             }
             break;
         case 'e':
+            // not implemented
             break;
         default:
             fprintf(stderr, "unknown option: %c\n", option);
@@ -194,24 +200,20 @@ void parse_options(int argc, char *argv[])
 }
 
 
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
     pthread_t harvest_thread;
 
-    //if (signal(SIGINT, sig_handler) == SIG_ERR) {
-    //    fprintf(stderr, "\ncan't catch SIGINT\n");
-    //}
+    if (signal(SIGINT, sig_handler) == SIG_ERR) {
+        fprintf(stderr, "\ncan't catch SIGINT\n");
+    }
     if (signal(SIGUSR1, sig_handler) == SIG_ERR) {
         fprintf(stderr, "\ncan't catch SIGUSR1\n");
     }
 
-    //fifo_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_init(&fifo_mutex, NULL);
-
     keep_running = 1;
-
     parse_options(argc, argv);
-
     fifo = create_fifo(fifo_size);
 
     // thread that feeds the random data into the buffer
@@ -220,7 +222,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // networking loop
     libevent_glue();
+
+    // set in case libevent_glue return due to any error
     keep_running = 0;
 
     fprintf(stderr, "main thread exiting\n");
@@ -234,4 +239,3 @@ int main(int argc, char *argv[])
     pthread_exit(NULL);
     return EXIT_SUCCESS;
 }
-

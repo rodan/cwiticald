@@ -17,6 +17,7 @@
 #include <pthread.h>
 
 #include "main.h"
+#include "libevent_glue.h"
 
 void read_cb(struct bufferevent *bev, void *ctx)
 {
@@ -75,8 +76,11 @@ void read_cb(struct bufferevent *bev, void *ctx)
         } else if (buff_rx[0] == 0x03) {        // write entropy
         } else if (buff_rx[0] == 0x04) {        // report PID
         } else {
-            //fprintf(stdout, "%s %d: bogus packet received\n", inet_ntoa(p->addr->sin_addr), p->sd);
-            fprintf(stdout, "bogus packet received\n");
+            if (ip_present) {
+                fprintf(stdout, "%s %d: bogus packet received\n", inet_ntoa(addr.sin_addr), fd);
+            } else {
+                fprintf(stdout, "bogus packet received\n");
+            }
         }
     }
 }
@@ -84,14 +88,11 @@ void read_cb(struct bufferevent *bev, void *ctx)
 void error_cb(struct bufferevent *bev, short error, void *ctx)
 {
     if (error & BEV_EVENT_EOF) {
-        /* connection has been closed, do any clean up here */
-        /* ... */
+        // connection has been closed, do any clean up here
     } else if (error & BEV_EVENT_ERROR) {
-        /* check errno to see what error occurred */
-        /* ... */
+        // check errno to see what error occurred
     } else if (error & BEV_EVENT_TIMEOUT) {
-        /* must be a timeout event handle, handle it */
-        /* ... */
+        // must be a timeout event handle, handle it
     }
     bufferevent_free(bev);
 }
@@ -124,6 +125,7 @@ void libevent_glue(void)
     struct event *listener_event;
 
     base = event_base_new();
+    evbase = base;
     if (!base)
         return;
 
@@ -162,4 +164,9 @@ void libevent_glue(void)
     event_add(listener_event, NULL);
 
     event_base_dispatch(base);
+}
+
+void stop_libevent(struct event_base *base)
+{
+    event_base_loopbreak(base);
 }
