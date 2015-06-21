@@ -14,6 +14,7 @@ typedef struct {
 
 //#define CHECK_FIFO_NULL(fifo) MAC_FUNC(if (fifo == NULL) return 0;)
 fifo_t *create_fifo(const size_t size);
+void free_fifo(fifo_t * fifo);
 size_t fifo_push_byte(fifo_t * fifo, const uint8_t byte);
 size_t fifo_push(fifo_t * fifo, uint8_t * buff, const size_t count);
 size_t fifo_pop_byte(fifo_t * fifo, uint8_t * byte);

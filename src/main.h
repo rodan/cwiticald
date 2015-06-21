@@ -1,9 +1,25 @@
 #ifndef __MAIN_H_
 #define __MAIN_H_
 
-int fifo_size;
-
 #include "fifo.h"
+
+int fifo_size;
+fifo_t *fifo;
+pthread_mutex_t fifo_mutex;
+static volatile int keep_running;
+
+
+///////////////////////////////
+// default values that can be changed via 
+// command line arguments
+//
+
+int debug;
+int max_clients;
+int port;
+char *ip;
+char *rng_device;
+///////////////////////////////
 
 typedef struct {
     int sd;

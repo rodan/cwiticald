@@ -26,6 +26,11 @@ fifo_t *create_fifo(const size_t size)
     return fifo;
 }
 
+void free_fifo(fifo_t * fifo)
+{
+    free(fifo->buffer);
+}
+
 size_t fifo_push_byte(fifo_t * fifo, const uint8_t byte)
 {
     //CHECK_FIFO_NULL(fifo);
