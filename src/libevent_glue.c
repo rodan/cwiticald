@@ -125,6 +125,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
         } else if (buff_rx[0] == 0x03) {        // write entropy
         } else if (buff_rx[0] == 0x04) {        // report PID
         } else {
+            //bufferevent_write(bev, "err\n", 4);
             if (ip_present) {
                 fprintf(stdout, "%s %d: bogus packet received\n", inet_ntoa(addr.sin_addr), fd);
             } else {
