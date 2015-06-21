@@ -1,0 +1,307 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+
+   EGD : an Entropy Gathering Daemon
+   v0.9
+
+    Brian Warner <warner@lothar.com>
+     <http://sourceforge.net/projects/egd/>
+
+    originally intended for use with the GNU Privacy Guard
+     <http://www.gnupg.org>
+
+This is a standalone daemon that sits around running various statistics
+collection programs (ps, vmstat, iostat, etc). It hashes the results into an
+"entropy pool". If things happen on your system at relatively random and
+unpredictable times, then some of that randomness will become a part of the
+entropy pool and can be used to generate random numbers. It is basically a
+user-space implementation of the Linux kernel /dev/random device. As such, it
+should be runnable on all unix-like systems. It is intended to make up for the
+lack of /dev/random on non-Linux systems so that programs like GPG can be used
+safely.
+
+This daemon should be allowed to run for a long time. It only gathers a small
+amount of entropy at a time, because many system statistics do not change
+very frequently and are rather predictable if sampled too quickly. It does not
+require any special privileges to run, but it may be reasonable for a sysadmin
+to arrange for it to be started at boot time, allowing it to be used by all
+users.
+
+The daemon provides a socket interface (either UNIX-style or TCP) from which
+the entropy can be read. For the exact protocol, see the notes at the end of
+the daemon source. Blocking and non-blocking reads are available, as well as a
+call to get the amount of entropy available in the pool. The entropy level is
+raised by running gatherer programs (which happens automatically over time)
+and adding their output; it is lowered by clients reading entropy. Once the
+count goes to zero, no entropy can be read until some more is generated. There
+is currently no equivalent to the Linux /dev/urandom device, which provides
+exactly this read-when-entropy-is-empty capability (at this point the data
+returned is no longer truly random, merely cryptographically strong).
+
+The daemon is written in perl for greatest portability to lots of non-Linux
+systems. perl5.004 should be plenty. It uses the SHA extension, currently by
+Uwe Hollerbach, available from CPAN. If your system does not already have
+this extension installed, version 2.00 will be installed for you (to make it
+easier to embed this module in the GnuPG distribution). The list of entropy
+gathering programs includes a variety of stats programs. They are searched
+for in a number of common directories. Any that are missing are pruned from
+the list at startup; any that cause runtime errors are dropped as well. Most
+sources remove all but the digits from the output in an attempt to distill
+the entropy before counting how many bits are provided by that source.
+
+
+HOW TO INSTALL:
+
+ Installation isn't strictly necessary. If you already have the SHA module
+ installed, then the egd.pl script can be run directly from any location.
+ Using the installation process just puts it into a common place. You install
+ EGD just as you would any normal perl module:
+
+  perl Makefile.PL
+  make
+  make test
+  make install
+
+ (there are no self-tests, so don't worry if the "make test" step complains
+ about errors). The 'make install' step must generally be executed as root.
+ The Makefile.PL will check to see if you have SHA installed already, and will
+ build/install an included copy if not. After installation, egd.pl will
+ probably be found in /usr/bin/egd.pl or /usr/local/bin/egd.pl, and should
+ already be on your $PATH. The example scripts in eg/ are useful for testing,
+ and for calculating how much entropy your system can generate (bits per
+ second), but are not installed.
+
+
+HOW TO USE EGD WITH GPG: <http://www.gnupg.org>
+
+ First, you'll need to configure GnuPG to use EGD for it's random number needs.
+ If you are compiling GPG, the easiest way to do this is at configure time.
+ Add "--enable-static-rnd=egd" to the arguments you give to ./configure . If
+ you have a pre-compiled version of GPG that wasn't configured this way, you
+ should be able to use a loadable extension module to accomplish the same 
+ thing; try adding:
+  load-extension rndegd
+ to your ~/.gnupg/options file, or use "--load-extension=rndegd" on the
+ command line when you run GPG. Since a system that doesn't have /dev/random
+ at compile time probably won't have it at runtime, configuring rndegd 
+ statically makes a lot more sense.
+
+ Second, you need to have the daemon running. EGD listens on unix-domain
+ socket for entropy requests. Unless you modify the path name in the GnuPG
+ file "cipher/rndegd.c", GPG will look for this socket in your home directory,
+ in ~/.gnupg/entropy (specifically it will look for "entropy" in the same
+ directory that has your keyrings, the "--homedir"). So you need to tell EGD
+ to listen there. Simply start the daemon as follows:
+
+  egd.pl ~/.gnupg/entropy
+
+ If you've never run GPG before, you'll have to create your ~/.gnupg directory
+ yourself (gpg will make it for you the first time it's run). The daemon
+ automatically forks itself into the background. Wait a few minutes for it to
+ collect some entropy. After that, GPG should run just like usual. If you
+ encrypt or sign stuff too frequently, you may get messages telling you to
+ wait as more entropy is gathered. Just give the daemon a few minutes to
+ gather more entropy, and GPG will continue along.
+
+
+HOW TO USE EGD FOR THE GPG SELF-TESTS:
+
+ The 'make check' target in GPG performs some extensive self-tests. I highly
+ recommend running them after you compile a new version, especially on the
+ less-common systems (anything other than linux-i386). The only problem is
+ that the self tests require an enormous amount of entropy, 58320 bytes as of
+ gnupg-0.9.9 . EGD cannot gather entropy very fast (50 *bits* per second in my
+ tests on a solaris box), so using EGD the normal way can result in self tests
+ that take several hours to run.
+
+ The simple workaround is the --bottomless option to EGD. That tells the
+ daemon to serve up an infinite pool of entropy instead of making the
+ requestor wait until more can be collected. Naturally you don't want to use
+ this mode for normal encryption: it would be considerably less secure. But
+ it's handy for tests. If you use it this way, I recommend also using the
+ --quit-after=60 option, which tells the daemon to quit after 60 minutes. That
+ way you won't have an insecure --bottomless EGD lying around forever,
+ possibly encouraging unsuspecting users to use it.
+
+ In addition, the self-tests run with GPG's --homedir option pointed at the
+ source tree's checks/ directory (since they use special test keys and not
+ your personal keyrings). That means they expect the entropy socket to live
+ there too. Either make a symlink to your ~/.gnupg/entropy socket, or start
+ the daemon listening to checks/entropy. (you can have multiple daemons
+ running: your normal, real one on ~/.gnupg/entropy, and the test-only,
+ --bottomless one in checks/entropy).
+
+ So to run the self tests:
+
+  cd gnupg-1.0.1
+  egd.pl --bottomless --quit-after=60 checks/entropy
+  (wait a minute or two to let the entropy build up)
+  make check
+
+
+HOW TO USE EGD WITH OpenSSH: <http://www.openssh.com>
+ (thanks to Patrick Gardella)
+
+ First, you'll need to configure OpenSSH to use EGD for it's random number 
+ needs.  Add "--with-egd-pool=/etc/entropy" to the arguments you give to 
+ ./configure. 
+
+ Second, you need to have the daemon running. EGD listens on unix-domain
+ socket for entropy requests. When you start egd.pl, you tell it where to
+ create the socket.  It can be anywhere for which you have write 
+ permissions.  Common places include, /etc/entropy, /tmp/entropy, etc. 
+ Simply start the daemon as follows:
+
+  egd.pl /etc/entropy
+
+ The daemon automatically forks itself into the background. Wait a few 
+ minutes for it to collect some entropy before you try to run a command 
+ like make host-key or ssh-keygen. After that, OpenSSH should run 
+ just like usual. You may get messages telling you to wait as more 
+ entropy is gathered. Just give the daemon a few minutes to gather 
+ more entropy, and OpenSSH will continue along.
+
+
+HOW TO USE EGD WITH OpenSSL: <http://www.openssh.org>
+ (I've never done this myself, feel free to send me better instructions)
+
+ Look at the man page for RAND_egd(3), available online in
+ <http://www.openssl.org/docs/crypto/RAND_egd.html>. You should start EGD
+ ahead of time, pointing it to a socket like /etc/entropy. You then provide
+ the path to that socket in the RAND_egd() call.
+
+ Based solely upon a cursory read of the man page, it appears that OpenSSL
+ creates a new single-use connection to the socket for every call to
+ RAND_egd() (presumably once per program), and tries to get as much entropy as
+ it can (the call has no parameter for how many bytes to read). If that is
+ true, then several calls to RAND_egd() within a short time (say, sequential
+ invocations of a program that uses SSL) will exhaust the entropy pool.
+ RAND_egd() uses a non-blocking read, so the application will get an error
+ about insuffient entropy rather than sleeping until EGD gathers more. After a
+ short time (seconds to minutes depending upon the number of working gathering
+ programs available) the pool will refill and RAND_egd() will begin to succeed
+ again.
+
+
+HOW TO USE EGD WITH OTHER PROGRAMS:
+
+ EGD can't completely simulate the convenient /dev/random device. It is not
+ possible to simply replace /dev/random with ~/.gnupg/entropy . The UNIX
+ socket created by EGD runs a simple protocol, described in the egd.pl source
+ with a sample implementation in eg/egc.pl . You will need to modify your
+ program to speak this protocol to the socket when it needs entropy. The
+ cipher/rndegd.c code in GnuPG is also a useful starting point.
+
+
+LICENSE:
+
+ EGD is free software and is released under a dual license: your choice of
+ the GNU General Public License or the XFree86 license. Please see the file
+ COPYING in this directory for the exact terms of the GPL, and the file
+ COPYING.xfree86 for the terms of the XFree86 license. If you make
+ modifications, you can choose to release them under just one or both. Or,
+ because the X license doesn't require you to do so, you can choose to not
+ release your changes at all (but please be kind and do). Share and Enjoy!
+
+ (please note that the included Digest::SHA1 module comes under a slightly
+ different license, the same as used by Perl itself, which is a bit more
+ liberal than the GPL).
+
+
+BUGS and LIMITATIONS:
+
+ EGD forks itself into the background automatically. It probably doesn't do
+ this as cleanly as it ought to (by following the helpful hints in the perl
+ documentation). So there might be ways to make it die by removing the
+ environment it was started under (unmounting the filesystem, stuff like
+ that).
+
+ The stirring of the pool feels secure to me, and uses SHA which is widely
+ considered secure, but there could be some weird interaction that causes
+ the entropy to be less random than you would expect. Some rough tests have
+ been done, but nothing really extensive. Please consider the output to be
+ fairly unpredictable but not necessarily completely random: use the output
+ to seed a random number generation algorithm. This is what GPG does with it.
+
+ Because this program may be asked to touch the filesystem in a place that is
+ world-readable (the entropy socket in a shared directory; if EGD is started
+ by the administrator and used by all users), the usual concerns about symlink
+ attacks hold. It may be best to put the socket in a directory that is not
+ world-writable, e.g. /etc/entropy instead of /tmp/entropy.
+
+ EGD is written in Perl because I felt that it was the best way to make it run
+ on the target machines (unix-like systems without /dev/random or equivalent).
+ It would probably be easier to follow if it were in C using glib, because I
+ could use their event loop, gIOchannels, and timers, rather than building my
+ own. (and the one I built is really ugly). But Perl runs on more weird
+ systems than glib, and more people are trying to port Perl to those systems
+ than glib. If it needs to be seriously extended, though, rewriting it should
+ be seriously considered.
+
+ And remember that this is a userspace solution to a problem that is better
+ handled in kernel space. The kernel sees a lot more random events (interrupt
+ timestamps, network packet arrivals, keystrokes) than userspace can ever hope
+ to see. If your kernel offers /dev/random, use it instead. EGD is only useful
+ on unix-like systems which do not already provide a strong source of entropy.
+
+
+OTHER SOLUTIONS:
+ <http://www.aet.tu-cottbus.de/personen/jaenicke/postfix_tls/prngd.html> holds
+ another RNG daemon, with an EGD-compatible interface.
+
+ Linux and some of the *BSD systems have /dev/random to provide this facility
+ natively.
+
+ <http://www.cosy.sbg.ac.at/~andi/> has a kernel module developed by Andreas
+ Maier which implements /dev/random for newer Solaris releases.
+
+ <http://mel.interspace.dk/~sune/hurd/entropy.html> has code to implement a
+ random device for the the GNU/Hurd.
+
+ <http://www.counterpane.com/yarrow.html>: PRNG by people who know what
+ they're doing. The code was somewhat windows-centric last time I looked; if
+ it weren't for that I would have used it inside EGD instead of the SHA hash
+ and stir.
+
+
+
+AUTHOR:
+ Brian Warner, <warner-egd@lothar.com>. Please send all patches, bug
+  reports, and comments to me. I'm especially interested in how well it
+  works on systems I don't have access to (I've only got linux, sunos, and
+  solaris to test on), as well as new gatherer programs to add to the list.
+
+ EGD was inspired by, and got the initial list of random number sources
+  from, the cryptlib entropy gathering code, by Peter Gutmann and others.
+  <http://www.cs.auckland.ac.nz/~pgut001/cryptlib/index.html>
+
+ Thanks to Werner Koch for writing GnuPG and for convincing me to go and
+ write this thing.
+
+ The EGD page is at <http://sourceforge.net/projects/egd/>. Visit my home page
+ at <http://www.lothar.com/tech/crypto/> for updates and other fun stuff.
+
+
+Changes in the most recent release: (see ChangeLog for older entries)
+ v0.9:
+
+  added FAQ, changed license to dual GPL/X11.
+  Fixed swapped use of LocalAddr and LocalPort when creating socket.
+  fixup self-test
+  Replace obsolete embedded SHA-1.2 module with less-obsolete Digest-SHA1-2.00
+
+
+MD5 CHECKSUMS:
+
+9f894e5dc818c7b306c891eb7d13363a  egd.pl
+
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.0.7 (GNU/Linux)
+Comment: Processed by Mailcrypt 3.5.7 <http://mailcrypt.sourceforge.net/>
+
+iD8DBQE9P7N8/k9efwOl4QgRAgD7AJ4ifOfaQe1G9+YNuNzYWJIfYpt3wACeI7vL
+5NB0cX8vUTMnYIJ9RJ6lShs=
+=Fxo/
+-----END PGP SIGNATURE-----

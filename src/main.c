@@ -157,7 +157,7 @@ void parse_options(int argc, char **argv)
                     "                               (default '%d')\n"
                     "  -m, --max-clients=NUM   maximum number of clients accepted\n"
                     "                               (default '%d')\n"
-                    "  -b, --buffer-size=NUM   buffer size used for storing entropy\n"
+                    "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
                     "                               (default '%d')\n"
                     "  -e, --debug             output extra info\n", rng_device, ip, port, max_clients, fifo_size);
             exit(EXIT_SUCCESS);
