@@ -16,7 +16,6 @@
 #include <errno.h>
 #include <pthread.h>
 
-#include "libevent_glue.h"
 #include "main.h"
 
 void read_cb(struct bufferevent *bev, void *ctx)
@@ -25,6 +24,20 @@ void read_cb(struct bufferevent *bev, void *ctx)
     uint8_t buff_tx[255];
 
     if (bufferevent_read(bev, &buff_rx, 2) == 2) {
+
+        // FIXME test getpeername code with ipv6
+        struct sockaddr_in addr;
+        socklen_t addr_len = sizeof(addr);
+        int ip_present = 0;
+        int fd, err;
+
+        fd = bufferevent_getfd(bev);
+        if (fd > 0) {
+            err = getpeername(fd, (struct sockaddr *) &addr, &addr_len);
+            if (err == 0) {
+                ip_present = 1;
+            }
+        }
 
         // EGD protocol
         // see http://egd.sourceforge.net/ for details
@@ -41,15 +54,21 @@ void read_cb(struct bufferevent *bev, void *ctx)
                     pthread_mutex_unlock(&fifo_mutex);
 
                     if ((bufferevent_write(bev, buff_tx, buff_rx[1]) == 0)) {
-                        // fprintf(stdout, "%s %d: %d bytes sent\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1]);
-                        fprintf(stdout, "%d bytes sent\n", buff_rx[1]);
+                        if (ip_present) {
+                            fprintf(stdout, "%s %d: %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
+                        } else {
+                            fprintf(stdout, "%d bytes sent\n", buff_rx[1]);
+                        }
                     }
                 } else {
                     pthread_mutex_unlock(&fifo_mutex);
-                    //fprintf(stdout, "%s %d: %d bytes requested, but only %d available\n", inet_ntoa(p->addr->sin_addr), p->sd, buff_rx[1], (int) p->fifo->size - (int) p->fifo->free - 1);
+                    if (ip_present) {
+                        fprintf(stdout, "%s %d: %d bytes requested, but only %d available\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], (int)fifo->size - (int)fifo->free - 1);
+                    } else {
                     fprintf(stdout,
                             "%d bytes requested, but only %d available\n",
                             buff_rx[1], (int)fifo->size - (int)fifo->free - 1);
+                    }
                     //usleep(200000);
                 }
             }
@@ -139,7 +158,7 @@ void libevent_glue(void)
     listener_event =
         event_new(base, listener, EV_READ | EV_PERSIST, do_accept,
                   (void *)base);
-    /*XXX check it */
+
     event_add(listener_event, NULL);
 
     event_base_dispatch(base);
