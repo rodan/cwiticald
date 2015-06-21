@@ -24,14 +24,14 @@ void read_cb(struct bufferevent *bev, void *ctx)
     uint8_t buff_rx[2];
     uint8_t buff_tx[255];
 
-    if (bufferevent_read(bev, &buff_rx, 2) == 2) {
+    if (bufferevent_read(bev, &buff_rx, 2)) {
 
         // FIXME test getpeername code with ipv6
         struct sockaddr_in addr;
         socklen_t addr_len = sizeof(addr);
         int ip_present = 0;
         int fd, err;
-        int avail;
+        unsigned int avail;
 
         fd = bufferevent_getfd(bev);
         if (fd > 0) {
@@ -45,11 +45,26 @@ void read_cb(struct bufferevent *bev, void *ctx)
         // see http://egd.sourceforge.net/ for details
 
         if (buff_rx[0] == 0x00) {       // get entropy level
+            avail=((unsigned int)fifo->size - (unsigned int)fifo->free - 1)*8;
+            if (avail > 4294967295) {
+                avail = 4294967295;
+            }
+            buff_tx[0] = (avail & 0xff000000) >> 24;
+            buff_tx[1] = (avail & 0x00ff0000) >> 16;
+            buff_tx[2] = (avail & 0x0000ff00) >> 8;
+            buff_tx[3] = avail & 0x000000ff;
+            if (bufferevent_write(bev, buff_tx, 4) == 0) {
+                if (ip_present) {
+                    fprintf(stdout, "%s %d: get_pool_size ok\n", inet_ntoa(addr.sin_addr), fd);
+                } else {
+                    fprintf(stdout, "get_pool_size ok\n");
+                }
+            }
         } else if (buff_rx[0] == 0x01) {        // read entropy nonblocking
             // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
-                avail=(int)fifo->size - (int)fifo->free - 1;
+                avail=(unsigned int)fifo->size - (unsigned int)fifo->free - 1;
                 if (avail + 1 > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(fifo, buff_tx, buff_rx[1]);
@@ -57,9 +72,9 @@ void read_cb(struct bufferevent *bev, void *ctx)
                     bufferevent_write(bev, &buff_rx[1], 1);
                     if ((bufferevent_write(bev, buff_tx, buff_rx[1]) == 0)) {
                         if (ip_present) {
-                            fprintf(stdout, "%s %d: nonblocking_get %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
+                            fprintf(stdout, "%s %d: nonblocking_get %d bytes sent ok\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
                         } else {
-                            fprintf(stdout, "nonblocking_get %d bytes sent\n", buff_rx[1]);
+                            fprintf(stdout, "nonblocking_get %d bytes sent ok\n", buff_rx[1]);
                         }
                     }
                 } else {
@@ -69,10 +84,10 @@ void read_cb(struct bufferevent *bev, void *ctx)
                     bufferevent_write(bev, &avail, 1);
                     if ((bufferevent_write(bev, buff_tx, avail) == 0)) {
                         if (ip_present) {
-                            fprintf(stdout, "%s %d: %d bytes requested, but only %d sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], avail);
+                            fprintf(stdout, "%s %d: %d bytes requested, but only %d sent ok\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1], avail);
                         } else {
                             fprintf(stdout,
-                                    "%d bytes requested, but only %d sent\n",
+                                    "%d bytes requested, but only %d sent ok\n",
                                     buff_rx[1], avail);
                         }
                     }
@@ -82,7 +97,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
             // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
-                avail=(int)fifo->size - (int)fifo->free - 1;
+                avail=(unsigned int)fifo->size - (unsigned int)fifo->free - 1;
                 if (fifo->size - fifo->free > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(fifo, buff_tx, buff_rx[1]);
@@ -90,9 +105,9 @@ void read_cb(struct bufferevent *bev, void *ctx)
 
                     if ((bufferevent_write(bev, buff_tx, buff_rx[1]) == 0)) {
                         if (ip_present) {
-                            fprintf(stdout, "%s %d: blocking_get %d bytes sent\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
+                            fprintf(stdout, "%s %d: blocking_get %d bytes sent ok\n", inet_ntoa(addr.sin_addr), fd, buff_rx[1]);
                         } else {
-                            fprintf(stdout, "blocking_get %d bytes sent\n", buff_rx[1]);
+                            fprintf(stdout, "blocking_get %d bytes sent ok\n", buff_rx[1]);
                         }
                     }
                 } else {
