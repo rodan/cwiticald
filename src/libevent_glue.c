@@ -65,8 +65,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
         // see http://egd.sourceforge.net/ for details
 
         if (buff_rx[0] == 0x00) {       // get entropy level
-            avail =
-                ((unsigned int)fifo->size - (unsigned int)fifo->free - 1) * 8;
+            avail = (fifo->size - fifo->free - 1) * 8;
             if (avail > 4294967295UL) {
                 avail = 4294967295UL;
             }
@@ -111,11 +110,11 @@ void read_cb(struct bufferevent *bev, void *ctx)
                         if (ip_present) {
                             fprintf(stdout,
                                     "%s %d: %d bytes requested, but only %d sent ok\n",
-                                    ip_str, fd, buff_rx[1], avail);
+                                    ip_str, fd, buff_rx[1], (int) avail);
                         } else {
                             fprintf(stdout,
                                     "%d bytes requested, but only %d sent ok\n",
-                                    buff_rx[1], avail);
+                                    buff_rx[1], (int) avail);
                         }
                     }
                 }
@@ -124,7 +123,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
             // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
-                avail = (unsigned int)fifo->size - (unsigned int)fifo->free - 1;
+                avail = fifo->size - fifo->free - 1;
                 if (fifo->size - fifo->free > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(fifo, buff_tx, buff_rx[1]);
@@ -145,11 +144,11 @@ void read_cb(struct bufferevent *bev, void *ctx)
                     if (ip_present) {
                         fprintf(stdout,
                                 "%s %d: %d bytes requested, but only %d available\n",
-                                ip_str, fd, buff_rx[1], avail);
+                                ip_str, fd, buff_rx[1], (int) avail);
                     } else {
                         fprintf(stdout,
                                 "%d bytes requested, but only %d available\n",
-                                buff_rx[1], avail);
+                                buff_rx[1], (int) avail);
                     }
                     //usleep(200000);
                 }
