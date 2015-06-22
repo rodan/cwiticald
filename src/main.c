@@ -164,7 +164,7 @@ void parse_options(int argc, char **argv)
                     "  -p, --port=NUM          port used\n"
                     "                               (default '%d')\n"
                     "  -m, --max-clients=NUM   maximum number of clients accepted\n"
-                    "                               (default '%d')\n"
+                    "                               (default '%d') - not implemented\n"
                     "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
                     "                               (default '%d')\n",
                     rng_device, ip4, ip6, port, max_clients, fifo_size);

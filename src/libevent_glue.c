@@ -86,7 +86,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
             // client requests buff_rx[1] bytes of entropy
             if (buff_rx[1]) {
                 pthread_mutex_lock(&fifo_mutex);
-                avail = (unsigned int)fifo->size - (unsigned int)fifo->free - 1;
+                avail = fifo->size - fifo->free - 1;
                 if (avail + 1 > buff_rx[1]) {
                     // there is enough entropy in the fifo buffer
                     fifo_pop(fifo, buff_tx, buff_rx[1]);
