@@ -4,17 +4,18 @@ PROJ = cwiticald
 
 ### Machine flags
 #
-#CC_CMACH	= -mmcu=msp430f5510
-#CC_DMACH	= -D__MSP430F5510__
+#CC_CMACH	= 
+#CC_DMACH	= 
 ### Build flags
 #
 # -fdata-sections, -ffunction-sections and -Wl,--gc-sections -Wl,-s
 # are used for dead code elimination, see:
 # http://gcc.gnu.org/ml/gcc-help/2003-08/msg00128.html
 #
-CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall -Wno-switch
-CFLAGS		+= -fno-force-addr -finline-limit=1 -fno-schedule-insns
-CFLAGS		+= -fshort-enums -Wl,-Map=output.map
+#CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall -Wno-switch
+#CFLAGS		+= -fno-force-addr -finline-limit=1 -fno-schedule-insns
+#CFLAGS		+= -fshort-enums -Wl,-Map=output.map
+CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall
 LDFLAGS		= -lpthread -levent_core
 
 CFLAGS_REL	+= -O2 -pipe
