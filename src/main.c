@@ -87,25 +87,34 @@ void *harvest(void *param)
                                                                   24);
     fips_init(&fipsctx, initial_data);
 
-    while ( keep_running ) {
+    while (keep_running) {
         // if there is space in the fifo
-        while ( fifo->free && keep_running ) {
-            rng_read(fd, rng_buffer, sizeof(rng_buffer));
-            fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
+        while (fifo->free && keep_running) {
+            if (rng_read(fd, rng_buffer, sizeof(rng_buffer)) == EXIT_SUCCESS) {
+                fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
 
-            if (fips_result) {
-                fprintf(stderr, "fips test failed\n");
-                sleep(1);
-            } else {
-                pthread_mutex_lock(&fifo_mutex);
-                if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
-                    fifo_push(fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                if (fips_result) {
+                    fprintf(stderr, "fips test failed\n");
+                    sleep(1);
                 } else {
-                    fifo_push(fifo, rng_buffer, fifo->free);
+                    pthread_mutex_lock(&fifo_mutex);
+                    if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
+                        fifo_push(fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                    } else {
+                        fifo_push(fifo, rng_buffer, fifo->free);
+                    }
+                    pthread_mutex_unlock(&fifo_mutex);
                 }
-                pthread_mutex_unlock(&fifo_mutex);
-                fprintf(stdout, "%d/%d bytes of entropy in buffer\n", (unsigned int) fifo->size - (unsigned int) fifo->free - 1, (unsigned int)fifo->size - 1);
+            } else {
+                // error reading entropy, give the device time to settle
+                close(fd);
+                sleep(1);
+                fd = open(rng_device, O_RDONLY);
             }
+            fprintf(stdout, "%8d/%d bytes of entropy available\n",
+                (unsigned int)fifo->size -
+                (unsigned int)fifo->free - 1,
+                (unsigned int)fifo->size - 1);
         }
         // fifo is now full, get some rest
         usleep(100000);
@@ -158,8 +167,8 @@ void parse_options(int argc, char **argv)
                     "  -m, --max-clients=NUM   maximum number of clients accepted\n"
                     "                               (default '%d')\n"
                     "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
-                    "                               (default '%d')\n"
-                    "  -e, --debug             output extra info\n", rng_device, ip, port, max_clients, fifo_size);
+                    "                               (default '%d')\n",
+                    rng_device, ip, port, max_clients, fifo_size);
             exit(EXIT_SUCCESS);
             break;
         case 'd':
@@ -199,7 +208,6 @@ void parse_options(int argc, char **argv)
     }
 }
 
-
 int main(int argc, char **argv)
 {
     pthread_t harvest_thread;
@@ -221,7 +229,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error creating thread\n");
         return EXIT_FAILURE;
     }
-
     // networking loop
     libevent_glue();
 

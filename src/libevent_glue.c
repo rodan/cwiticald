@@ -24,14 +24,14 @@ void read_cb(struct bufferevent *bev, void *ctx)
     uint8_t buff_rx[2];
     uint8_t buff_tx[255];
 
-    if (bufferevent_read(bev, &buff_rx, 2)) {
+    if (bufferevent_read(bev, &buff_rx, 2) > 0) {
 
         // FIXME test getpeername code with ipv6
         struct sockaddr_in addr;
         socklen_t addr_len = sizeof(addr);
         int ip_present = 0;
         int fd, err;
-        unsigned int avail;
+        size_t avail;
 
         fd = bufferevent_getfd(bev);
         if (fd > 0) {
@@ -46,8 +46,8 @@ void read_cb(struct bufferevent *bev, void *ctx)
 
         if (buff_rx[0] == 0x00) {       // get entropy level
             avail=((unsigned int)fifo->size - (unsigned int)fifo->free - 1)*8;
-            if (avail > 4294967295) {
-                avail = 4294967295;
+            if (avail > 4294967295UL) {
+                avail = 4294967295UL;
             }
             buff_tx[0] = (avail & 0xff000000) >> 24;
             buff_tx[1] = (avail & 0x00ff0000) >> 16;
