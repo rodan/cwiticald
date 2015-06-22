@@ -123,11 +123,12 @@ void *harvest(void *param)
 
 void parse_options(int argc, char **argv)
 {
-    static const char short_options[] = "hed:i:p:m:b:";
+    static const char short_options[] = "hed:i:I:p:m:b:";
     static const struct option long_options[] = {
         {.name = "help",.val = 'h'},
         {.name = "device",.has_arg = 1,.val = 'd'},
-        {.name = "ip",.has_arg = 1,.val = 'i'},
+        {.name = "ipv4",.has_arg = 1,.val = 'i'},
+        {.name = "ipv6",.has_arg = 1,.val = 'I'},
         {.name = "port",.has_arg = 1,.val = 'p'},
         {.name = "max-clients",.has_arg = 1,.val = 'm'},
         {.name = "buffer-size",.has_arg = 1,.val = 'b'},
@@ -138,7 +139,8 @@ void parse_options(int argc, char **argv)
 
     // default values
     rng_device = "/dev/truerng";
-    ip = "127.0.0.1";
+    ip4 = "127.0.0.1";
+    ip6 = "";
     port = 41300;
     max_clients = 20;
     fifo_size = 100000;
@@ -155,7 +157,9 @@ void parse_options(int argc, char **argv)
                     "  -h, --help              this help\n"
                     "  -d, --device=NAME       block file that outputs random data\n"
                     "                               (default '%s')\n"
-                    "  -i, --ip=IP             IP used for listening for connections\n"
+                    "  -i, --ipv4=IP           IPv4 used for listening for connections\n"
+                    "                               (default '%s')\n"
+                    "  -i, --ipv6=IP           IPv6 used for listening for connections\n"
                     "                               (default '%s')\n"
                     "  -p, --port=NUM          port used\n"
                     "                               (default '%d')\n"
@@ -163,14 +167,17 @@ void parse_options(int argc, char **argv)
                     "                               (default '%d')\n"
                     "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
                     "                               (default '%d')\n",
-                    rng_device, ip, port, max_clients, fifo_size);
+                    rng_device, ip4, ip6, port, max_clients, fifo_size);
             exit(EXIT_SUCCESS);
             break;
         case 'd':
             rng_device = optarg;
             break;
         case 'i':
-            ip = optarg;
+            ip4 = optarg;
+            break;
+        case 'I':
+            ip6 = optarg;
             break;
         case 'p':
             port = atoi(optarg);

@@ -17,7 +17,8 @@ static volatile int keep_running;
 int debug;
 int max_clients;
 int port;
-char *ip;
+char *ip4;
+char *ip6;
 char *rng_device;
 ///////////////////////////////
 
