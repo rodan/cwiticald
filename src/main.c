@@ -225,6 +225,7 @@ int main(int argc, char **argv)
     keep_running = 1;
     parse_options(argc, argv);
     fifo = create_fifo(fifo_size);
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     // thread that feeds the random data into the buffer
     if (pthread_create(&harvest_thread, NULL, harvest, fifo)) {

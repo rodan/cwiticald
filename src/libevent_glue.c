@@ -43,8 +43,7 @@ void read_cb(struct bufferevent *bev, void *ctx)
 {
     uint8_t buff_rx[2];
     uint8_t buff_tx[255];
-    //struct sockaddr_in sa;
-    struct sockaddr_storage sa; // FIXME test ipv6
+    struct sockaddr_storage sa;
     socklen_t addr_len = sizeof(sa);
     int ip_present = 0;
     char ip_str[INET6_ADDRSTRLEN];
