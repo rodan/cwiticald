@@ -84,35 +84,40 @@ void *harvest(void *param)
 
     while (keep_running) {
         // if there is space in the fifo
-        while (fifo->free && keep_running) {
-            if (rng_read(fd, rng_buffer, sizeof(rng_buffer)) == EXIT_SUCCESS) {
-                fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
+        if (fifo->free > fifo_size - fifo_trigger) {
+            while (fifo->free && keep_running) {
+                if (rng_read(fd, rng_buffer, sizeof(rng_buffer)) ==
+                    EXIT_SUCCESS) {
+                    fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
 
-                if (fips_result) {
-                    fprintf(stderr, "fips test failed\n");
-                    sleep(1);
-                } else {
-                    pthread_mutex_lock(&fifo_mutex);
-                    if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
-                        fifo_push(fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                    if (fips_result) {
+                        fprintf(stderr, "fips test failed\n");
+                        sleep(1);
                     } else {
-                        fifo_push(fifo, rng_buffer, fifo->free);
+                        pthread_mutex_lock(&fifo_mutex);
+                        if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
+                            fifo_push(fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                        } else {
+                            fifo_push(fifo, rng_buffer, fifo->free);
+                        }
+                        pthread_mutex_unlock(&fifo_mutex);
                     }
-                    pthread_mutex_unlock(&fifo_mutex);
+                } else {
+                    // error reading entropy, give the device time to settle
+                    close(fd);
+                    sleep(1);
+                    fd = open(rng_device, O_RDONLY);
                 }
-            } else {
-                // error reading entropy, give the device time to settle
-                close(fd);
-                sleep(1);
-                fd = open(rng_device, O_RDONLY);
+                fprintf(stdout, "%8d/%d bytes of entropy available\n",
+                        (unsigned int)fifo->size -
+                        (unsigned int)fifo->free - 1,
+                        (unsigned int)fifo->size - 1);
             }
-            fprintf(stdout, "%8d/%d bytes of entropy available\n",
-                (unsigned int)fifo->size -
-                (unsigned int)fifo->free - 1,
-                (unsigned int)fifo->size - 1);
+            // in case fifo_trigger == fifo_size
+            //usleep(200000);
         }
         // fifo is now full, get some rest
-        usleep(100000);
+        usleep(200000);
     }
 
     fprintf(stderr, "harvest thread exiting\n");
@@ -123,7 +128,7 @@ void *harvest(void *param)
 
 void parse_options(int argc, char **argv)
 {
-    static const char short_options[] = "hed:i:I:p:m:b:";
+    static const char short_options[] = "hed:i:I:p:m:b:t:";
     static const struct option long_options[] = {
         {.name = "help",.val = 'h'},
         {.name = "device",.has_arg = 1,.val = 'd'},
@@ -132,6 +137,7 @@ void parse_options(int argc, char **argv)
         {.name = "port",.has_arg = 1,.val = 'p'},
         {.name = "max-clients",.has_arg = 1,.val = 'm'},
         {.name = "buffer-size",.has_arg = 1,.val = 'b'},
+        {.name = "trigger",.has_arg = 1,.val = 't'},
         {.name = "debug",.val = 'e'},
         {0, 0, 0, 0}
     };
@@ -143,7 +149,8 @@ void parse_options(int argc, char **argv)
     ip6 = "";
     port = 41300;
     max_clients = 20;
-    fifo_size = 100000;
+    fifo_size = 500000;
+    fifo_trigger = 450000;
     debug = 0;
 
     while ((option = getopt_long(argc, argv, short_options,
@@ -166,8 +173,11 @@ void parse_options(int argc, char **argv)
                     "  -m, --max-clients=NUM   maximum number of clients accepted\n"
                     "                               (default '%d') - not implemented\n"
                     "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
+                    "                               (default '%d')\n"
+                    "  -t, --trigger=NUM       at what buffer size should the program trigger entropy reads\n"
                     "                               (default '%d')\n",
-                    rng_device, ip4, ip6, port, max_clients, fifo_size);
+                    rng_device, ip4, ip6, port, max_clients, fifo_size,
+                    fifo_trigger);
             exit(EXIT_SUCCESS);
             break;
         case 'd':
@@ -197,6 +207,13 @@ void parse_options(int argc, char **argv)
             fifo_size = atoi(optarg);
             if (fifo_size < 5000) {
                 fprintf(stderr, "invalid buffer-size value\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        case 't':
+            fifo_trigger = atoi(optarg);
+            if ((fifo_trigger > fifo_size) || (fifo_trigger < 1000)) {
+                fprintf(stderr, "invalid trigger value\n");
                 exit(EXIT_FAILURE);
             }
             break;
@@ -232,9 +249,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error creating thread\n");
         return EXIT_FAILURE;
     }
+    // detect if there is an immediate error in the harvest thread
+    // and in that case don't start the network loop
+    usleep(200000);
     // networking loop
-    libevent_glue();
-
+    if (keep_running) {
+        libevent_glue();
+    }
     // set in case libevent_glue return due to any error
     keep_running = 0;
 

@@ -16,10 +16,12 @@ static volatile int keep_running;
 
 int debug;
 int max_clients;
+int fifo_trigger;
 int port;
 char *ip4;
 char *ip6;
 char *rng_device;
+
 ///////////////////////////////
 
 typedef struct {
