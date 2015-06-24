@@ -8,7 +8,7 @@ unless (@ARGV >= 2) {
     print "Usage: egc.pl <daemon> <command> [<args>]\n";
     print "  daemon: host:portnum or /path/to/unix/socket\n";
     print "  commands:\n";
-    print "     get:  returns bits of entropy in pool\n";
+    print "     get:  returns the number of bytes of entropy in pool\n";
     print "     read N: tries to get N bytes of entropy, nonblocking\n";
     print "     readb N: gets N bytes of entropy, blocking\n";
     print "     write N: reads from stdin, adds N bits to entropy pool\n";
@@ -32,7 +32,8 @@ if ($command eq 'get') {
     my $nread = $s->sysread($buf, 4);
     die "didn't read all 4 bytes in one shot" if ($nread != 4);
     my $count = unpack("N",$buf);
-    print " $count bits of entropy in pool\n";
+    $count /= 8;
+    print " $count bytes of entropy in the pool\n";
 } elsif ($command eq 'read') {
     my $bytes = shift;
     $bytes = 255 if $bytes > 255;
