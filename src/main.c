@@ -9,10 +9,15 @@
 #include <string.h>
 #include <getopt.h>
 
+#define MAIN_LEVEL
 #include "main.h"
+
 #include "fifo.h"
 #include "fips.h"
 #include "libevent_glue.h"
+
+int fifo_size;
+static volatile int keep_running;
 
 void sig_handler(const int signo)
 {
@@ -62,7 +67,7 @@ void *harvest(void *param)
     // buffer sent to the fips check function
     uint8_t rng_buffer[FIPS_RNG_BUFFER_SIZE];
     //pkt_t *p_ptr = (pkt_t *) pkt_ptr;
-    fifo_t *fifo = (fifo_t *) param;
+    fifo_t *tfifo = (fifo_t *) param;
     // context for the FIPS tests
     static fips_ctx_t fipsctx;
     int fips_result;
@@ -83,9 +88,9 @@ void *harvest(void *param)
     fips_init(&fipsctx, initial_data);
 
     while (keep_running) {
-        // if there is space in the fifo
-        if (fifo->free > fifo_size - fifo_trigger) {
-            while (fifo->free && keep_running) {
+        // if there is space in the tfifo
+        if (tfifo->free > fifo_size - fifo_trigger) {
+            while (tfifo->free && keep_running) {
                 if (rng_read(fd, rng_buffer, sizeof(rng_buffer)) ==
                     EXIT_SUCCESS) {
                     fips_result = fips_run_rng_test(&fipsctx, &rng_buffer);
@@ -95,10 +100,10 @@ void *harvest(void *param)
                         sleep(1);
                     } else {
                         pthread_mutex_lock(&fifo_mutex);
-                        if (fifo->free > FIPS_RNG_BUFFER_SIZE) {
-                            fifo_push(fifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
+                        if (tfifo->free > FIPS_RNG_BUFFER_SIZE) {
+                            fifo_push(tfifo, rng_buffer, FIPS_RNG_BUFFER_SIZE);
                         } else {
-                            fifo_push(fifo, rng_buffer, fifo->free);
+                            fifo_push(tfifo, rng_buffer, fifo->free);
                         }
                         pthread_mutex_unlock(&fifo_mutex);
                     }
@@ -109,9 +114,9 @@ void *harvest(void *param)
                     fd = open(rng_device, O_RDONLY);
                 }
                 fprintf(stdout, "%8u/%u bytes of entropy available\n",
-                        (unsigned int)fifo->size -
-                        (unsigned int)fifo->free - 1,
-                        (unsigned int)fifo->size - 1);
+                        (unsigned int)tfifo->size -
+                        (unsigned int)tfifo->free - 1,
+                        (unsigned int)tfifo->size - 1);
             }
             // in case fifo_trigger == fifo_size
             //usleep(200000);

@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <pthread.h>
 
+#define LIBEVENT_LEVEL
 #include "main.h"
 #include "libevent_glue.h"
 
