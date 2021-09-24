@@ -31,7 +31,7 @@ static int rng_read(const int fd, void *buf, const size_t size)
     size_t sz = size;
 
     while (sz) {
-        r = read(fd, buf + off, sz);
+        r = read(fd, (uint8_t *) buf + off, sz);
         if (r < 0) {
             if ((errno == EAGAIN) || (errno == EINTR))
                 continue;
@@ -108,7 +108,7 @@ void *harvest(void *param)
                     sleep(1);
                     fd = open(rng_device, O_RDONLY);
                 }
-                fprintf(stdout, "%8d/%d bytes of entropy available\n",
+                fprintf(stdout, "%8u/%u bytes of entropy available\n",
                         (unsigned int)fifo->size -
                         (unsigned int)fifo->free - 1,
                         (unsigned int)fifo->size - 1);
