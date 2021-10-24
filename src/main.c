@@ -15,6 +15,7 @@
 #include "fifo.h"
 #include "fips.h"
 #include "libevent_glue.h"
+#include "version.h"
 
 int fifo_size;
 static volatile int keep_running;
@@ -34,6 +35,11 @@ static int rng_read(const int fd, void *buf, const size_t size)
     size_t off = 0;
     ssize_t r;
     size_t sz = size;
+
+    if (fd < 0) {
+        fprintf(stderr, "invalid file descriptor\n");
+        return EXIT_FAILURE;
+    }
 
     while (sz) {
         r = read(fd, (uint8_t *) buf + off, sz);
@@ -79,13 +85,16 @@ void *harvest(void *param)
         fprintf(stderr, "critical error: cannot open RNG device\n");
         keep_running = 0;
         pthread_exit(0);
-    }
-
-    rng_read(fd, &dev_buff, 4);
-    initial_data =
-        dev_buff[0] | (dev_buff[1] << 8) | (dev_buff[2] << 16) | (dev_buff[3] <<
+    } else {
+        if (rng_read(fd, &dev_buff, 4) == EXIT_FAILURE) {
+            keep_running = 0;
+            pthread_exit(0);
+        }
+        initial_data =
+            dev_buff[0] | (dev_buff[1] << 8) | (dev_buff[2] << 16) | (dev_buff[3] <<
                                                                   24);
-    fips_init(&fipsctx, initial_data);
+        fips_init(&fipsctx, initial_data);
+    }
 
     while (keep_running) {
         // if there is space in the tfifo
@@ -109,9 +118,7 @@ void *harvest(void *param)
                     }
                 } else {
                     // error reading entropy, give the device time to settle
-                    close(fd);
                     sleep(1);
-                    fd = open(rng_device, O_RDONLY);
                 }
                 fprintf(stdout, "%8u/%u bytes of entropy available\n",
                         (unsigned int)tfifo->size -
@@ -133,12 +140,13 @@ void *harvest(void *param)
 
 void parse_options(int argc, char **argv)
 {
-    static const char short_options[] = "hed:i:I:p:m:b:t:";
+    static const char short_options[] = "hved:4:6:p:m:b:t:";
     static const struct option long_options[] = {
         {.name = "help",.val = 'h'},
+        {.name = "version",.val = 'v'},
         {.name = "device",.has_arg = 1,.val = 'd'},
-        {.name = "ipv4",.has_arg = 1,.val = 'i'},
-        {.name = "ipv6",.has_arg = 1,.val = 'I'},
+        {.name = "ipv4",.has_arg = 1,.val = '4'},
+        {.name = "ipv6",.has_arg = 1,.val = '6'},
         {.name = "port",.has_arg = 1,.val = 'p'},
         {.name = "max-clients",.has_arg = 1,.val = 'm'},
         {.name = "buffer-size",.has_arg = 1,.val = 'b'},
@@ -167,31 +175,34 @@ void parse_options(int argc, char **argv)
                     "Mandatory arguments to long options are mandatory for short options too.\n");
             fprintf(stdout,
                     "  -h, --help              this help\n"
+                    "  -v, --version           display version\n"
                     "  -d, --device=NAME       block file that outputs random data\n"
                     "                               (default '%s')\n"
-                    "  -i, --ipv4=IP           IPv4 used for listening for connections\n"
+                    "  -4, --ipv4=IP           IPv4 used for listening for connections\n"
                     "                               (default '%s')\n"
-                    "  -i, --ipv6=IP           IPv6 used for listening for connections\n"
+                    "  -6, --ipv6=IP           IPv6 used for listening for connections\n"
                     "                               (default '%s')\n"
                     "  -p, --port=NUM          port used\n"
                     "                               (default '%d')\n"
-                    "  -m, --max-clients=NUM   maximum number of clients accepted\n"
-                    "                               (default '%d') - not implemented\n"
                     "  -b, --buffer-size=NUM   size in bytes of the buffer used for storing entropy\n"
                     "                               (default '%d')\n"
-                    "  -t, --trigger=NUM       at what buffer size should the program trigger entropy reads\n"
+                    "  -t, --trigger=NUM       at what entropy availability level should the program fill up the buffer\n"
                     "                               (default '%d')\n",
-                    rng_device, ip4, ip6, port, max_clients, fifo_size,
+                    rng_device, ip4, ip6, port, fifo_size,
                     fifo_trigger);
+            exit(EXIT_SUCCESS);
+            break;
+        case 'v':
+            fprintf(stdout, "cwiticald v%d.%db%d\n\n", VER_MAJOR, VER_MINOR, BUILD);
             exit(EXIT_SUCCESS);
             break;
         case 'd':
             rng_device = optarg;
             break;
-        case 'i':
+        case '4':
             ip4 = optarg;
             break;
-        case 'I':
+        case '6':
             ip6 = optarg;
             break;
         case 'p':

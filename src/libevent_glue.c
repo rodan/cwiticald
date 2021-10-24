@@ -213,6 +213,9 @@ void libevent_glue(void)
     if (!base)
         return;
 
+    memset(&s4, 0, sizeof(struct sockaddr_in));
+    memset(&s6, 0, sizeof(struct sockaddr_in6));
+
     if ( strlen(ip4) > 0 ) {
         s4.sin_family = AF_INET;
         inet_pton(AF_INET, ip4, &(s4.sin_addr));
@@ -230,8 +233,8 @@ void libevent_glue(void)
 
     listener = socket(ss.ss_family, SOCK_STREAM, 0);
 
-    if (listener == 0) {
-        perror("socket failed");
+    if (listener < 0) {
+        perror("socket() failed");
         return;
     }
     evutil_make_socket_nonblocking(listener);
@@ -239,7 +242,10 @@ void libevent_glue(void)
 #ifndef WIN32
     {
         int one = 1;
-        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
+            perror("setsockopt() failed");
+            return;
+        }
     }
 #endif
 

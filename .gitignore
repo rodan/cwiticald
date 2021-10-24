@@ -1,0 +1,16 @@
+cwiticald
+cwiticald.txt
+cwiticald.dep
+cwiticald.cflags
+*.[oa]
+*.pyc
+*.*~
+*.s
+*.swp
+*.?#?
+.secrets*
+*.pyc
+output.map
+cov-int
+tags
+docs

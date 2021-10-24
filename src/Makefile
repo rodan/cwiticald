@@ -34,6 +34,7 @@ AS		= as
 AR		= ar
 
 BASH := $(shell which bash || which bash)
+COVERITY_SCAN_TOKEN := $(shell cat ../.secrets.COVERITY_SCAN_TOKEN)
 
 .PHONY: all
 .PHONY: clean
@@ -44,7 +45,7 @@ BASH := $(shell which bash || which bash)
 .PHONY: tags
 .PHONY: force
 
-all: depend config.h tags $(PROJ)
+all: depend config.h version.h tags $(PROJ)
 
 #
 # Build list of sources and objects to build
@@ -106,6 +107,9 @@ modinit.c:
 config.h:
 	@echo "Please do a 'make config' first!" && false
 
+version.h: $(SRCS)
+	@./tools/setver.sh
+
 tags: $(SRCS)
 	@echo "Generating tags .."
 	@exuberant-ctags -R
@@ -119,6 +123,7 @@ clean: $(SUBDIRS)
 		echo "Cleaning $$subdir .."; rm -f $$subdir/*.o; \
 	done
 	@rm -f *.o $(PROJ) $(PROJ).{txt,cflags,dep} output.map tags
+	@rm -rf cov-int
 
 doc:
 	rm -rf doc/*
@@ -133,5 +138,14 @@ scan-build: clean
 valgrind: $(PROJ)
 	@valgrind --show-leak-kinds=all ./$(PROJ)
 
+coverity: clean
+	@cov-build --dir cov-int make
+	@tar czvf /tmp/$(PROJ).tgz cov-int
+	@curl --form token=$(COVERITY_SCAN_TOKEN) \
+	  --form email=2b4eda@subdimension.ro \
+	  --form file=@/tmp/$(PROJ).tgz \
+	  --form version="Version" \
+	  --form description="Description" \
+	  https://scan.coverity.com/builds?project=rodan%2Fcwiticald
 
 -include $(PROJ).dep
