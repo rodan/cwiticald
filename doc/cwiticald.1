@@ -23,7 +23,7 @@ cwiticald \- an entropy gathering daemon that provides a stream of random bytes 
 .B cwiticald
 reads blocks of 2500 bytes from
 .I /dev/truerng
-verifies their compliance with strict FIPS 140 tests, fills up a large buffer and provides it to clients that connect to it via TCPv4 or TCPv6.
+verifies their compliance against FIPS 140-1 and FIPS 140-2 tests, fills up a large buffer and provides it to clients that connect to it via TCPv4 or TCPv6.
 
 an ekey-egd-linux service can be used as client to 
 .B cwiticald
@@ -32,10 +32,6 @@ an ekey-egd-linux service can be used as client to
 ekey-egd-linux -H 
 .I cwiticald-server
 -p 41300 -b 2 -r 10
-
-entropy traffic can be easily by encapsulated in an encrypted stream with applications like 
-.BR stunnel (8)
-to protect against any MITM attack.
 
 .SH OPTIONS
 .IP -h
@@ -69,7 +65,7 @@ default value is
 .B 127.0.0.1
 
 .IP "-6, --ipv6=IP"
-IPv6 address to bind to.
+IPv6 address to bind to. If this option is requested then the daemon will not bind to any IPv4 ip.
 
 default value is 
 .B ''

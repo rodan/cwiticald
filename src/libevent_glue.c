@@ -215,20 +215,20 @@ void libevent_glue(void)
 
     memset(&s4, 0, sizeof(struct sockaddr_in));
     memset(&s6, 0, sizeof(struct sockaddr_in6));
+    memset(&ss, 0, sizeof(struct sockaddr_storage));
 
     if ( strlen(ip4) > 0 ) {
         s4.sin_family = AF_INET;
         inet_pton(AF_INET, ip4, &(s4.sin_addr));
         s4.sin_port = htons(port);
         memcpy (&ss, &s4, sizeof (s4));
-    } else if ( strlen(ip6) > 0 ) {
+    } 
+
+    if ( strlen(ip6) > 0 ) {
         s6.sin6_family = AF_INET6;
         inet_pton(AF_INET6, ip6, &(s6.sin6_addr));
         s6.sin6_port = htons(port);
         memcpy (&ss, &s6, sizeof (s6));
-    } else {
-        fprintf(stderr, "IPv4/IPv6 unspecified\n");
-        return;
     }
 
     listener = socket(ss.ss_family, SOCK_STREAM, 0);
