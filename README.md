@@ -19,9 +19,22 @@ dependencies include a gcc-based linux toolchain, together with the pthread and 
 
 ### Usage
 
-see the manual
+a manual is provided
+```
+man ./doc/cwiticald.1
+```
+
+and also a [html render](./doc/cwiticald.1.html) if it
 
 ### Testing
+
+the application can be stress-tested with the tools present in the [tests](./tests) directory.
+
+```
+perl tests/sucker.pl host:port
+```
+
+will do it's best to continually deplete cwiticald's entropy buffer.
 
 the code itself is static-scanned by [llvm's scan-build](https://clang-analyzer.llvm.org/), [cppcheck](http://cppcheck.net/) and [coverity](https://scan.coverity.com/projects/rodan-cwiticald?tab=overview). Dynamic memory allocation in the PC applications is checked with [valgrind](https://valgrind.org/).
 
