@@ -45,15 +45,12 @@
 <section class="Sh">
 <h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
 <p class="Pp"><b>cwiticald</b> reads blocks of 2500 bytes from
-    <i>/dev/truerng</i> verifies their compliance with strict FIPS 140 tests,
-    fills up a large buffer and provides it to clients that connect to it via
-    TCPv4 or TCPv6.</p>
+    <i>/dev/truerng</i> verifies their compliance against FIPS 140-1 and FIPS
+    140-2 tests, fills up a large buffer and provides it to clients that connect
+    to it via TCPv4 or TCPv6.</p>
 <p class="Pp">an ekey-egd-linux service can be used as client to
     <b>cwiticald</b> :</p>
 <p class="Pp">ekey-egd-linux -H <i>cwiticald-server</i> -p 41300 -b 2 -r 10</p>
-<p class="Pp">entropy traffic can be easily by encapsulated in an encrypted
-    stream with applications like <b>stunnel</b>(8) to protect against any MITM
-    attack.</p>
 <p class="Pp"></p>
 </section>
 <section class="Sh">
@@ -86,7 +83,8 @@ ATTRS{idVendor}==&quot;04d8&quot;, ATTRS{idProduct}==&quot;f5fe&quot;, ENV{ID_MM
     <p class="Pp"></p>
   </dd>
   <dt>-6, --ipv6=IP</dt>
-  <dd>IPv6 address to bind to.
+  <dd>IPv6 address to bind to. If this option is requested then the daemon will
+      not bind to any IPv4 ip.
     <p class="Pp">default value is <b>''</b></p>
     <p class="Pp"></p>
   </dd>
