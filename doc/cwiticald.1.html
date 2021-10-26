@@ -48,9 +48,13 @@
     <i>/dev/truerng</i> verifies their compliance against FIPS 140-1 and FIPS
     140-2 tests, fills up a large buffer and provides it to clients that connect
     to it via TCPv4 or TCPv6.</p>
+<p class="Pp">The application does not need root priviledges or write access to
+    any file in order to run.</p>
 <p class="Pp">an ekey-egd-linux service can be used as client to
     <b>cwiticald</b> :</p>
 <p class="Pp">ekey-egd-linux -H <i>cwiticald-server</i> -p 41300 -b 2 -r 10</p>
+<p class="Pp"></p>
+<p class="Pp"></p>
 <p class="Pp"></p>
 </section>
 <section class="Sh">
@@ -70,10 +74,11 @@
 #
 # This rule creates a symlin to newly attached CDC-ACM device 
 # Also includes fix for wrong termios settings on some linux kernels
-SUBSYSTEM==&quot;tty&quot;, ATTRS{product}==&quot;TrueRNG&quot;, SYMLINK+=&quot;TrueRNG&quot;, RUN+=&quot;/bin/stty raw -echo -ixoff -F /dev/%k speed 3000000&quot;
+SUBSYSTEM==&quot;tty&quot;, ATTRS{product}==&quot;TrueRNG&quot;, MODE=&quot;0640&quot;, GROUP=&quot;rngd&quot;, SYMLINK+=&quot;truerng&quot;, RUN+=&quot;/bin/stty raw -echo -ixoff -F /dev/%k speed 3000000&quot;
 ATTRS{idVendor}==&quot;04d8&quot;, ATTRS{idProduct}==&quot;f5fe&quot;, ENV{ID_MM_DEVICE_IGNORE}=&quot;1&quot;
     </pre>
-    <p class="Pp">one might need to tweak the USB Vendor and Product IDs.</p>
+    <p class="Pp">one might need to tweak the USB Vendor, Product ID and the
+        group ownership.</p>
     <p class="Pp">default value is <b>/dev/truerng</b></p>
     <p class="Pp"></p>
   </dd>
