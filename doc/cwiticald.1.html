@@ -49,12 +49,11 @@
     140-2 tests, fills up a large buffer and provides it to clients that connect
     to it via TCPv4 or TCPv6.</p>
 <p class="Pp">The application does not need root priviledges or write access to
-    any file in order to run.</p>
+    any file in order to run. /dev/ttyACMx (the TrueRNG USB device) needs to be
+    readable by the user/group cwiticald runs as.</p>
 <p class="Pp">an ekey-egd-linux service can be used as client to
     <b>cwiticald</b> :</p>
 <p class="Pp">ekey-egd-linux -H <i>cwiticald-server</i> -p 41300 -b 2 -r 10</p>
-<p class="Pp"></p>
-<p class="Pp"></p>
 <p class="Pp"></p>
 </section>
 <section class="Sh">
