@@ -30,6 +30,25 @@ ekey-egd-linux -H cwiticald-server -p 41300 -b 2 -r 10
 
 dependencies include a gcc-based linux toolchain, together with the pthread and libevent-2.* libraries
 
+### Build and install
+
+if you're using gentoo, a portage overlay is provided. a simple
+
+```
+emerge cwiticald
+```
+
+will compile and install the application.
+
+for any other distribution, you can use the following commands:
+
+```
+cd ./src
+make
+install -m 755 ./cwiticald /usr/sbin/
+install -m 644 ../doc/cwiticald.1 /usr/share/man/man1/
+```
+
 ### Usage
 
 a manual is provided
@@ -41,7 +60,6 @@ man ./doc/cwiticald.1
 
 cwiticald [-hv] [-d, --device NAME] [-4, --ipv4 IP] [-6, --ipv6 IP]
 [-p, --port NUM] [-b, --buffer-size NUM] [-t, --trigger NUM]
-
 
 ### Testing
 
