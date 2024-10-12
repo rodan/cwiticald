@@ -257,6 +257,9 @@ int libevent_glue(void)
             fprintf(stderr, "Could not create an ipv4 listener!\n");
             return ret;
         }
+    } else {
+        event_base_dispatch(base);
+        return EXIT_FAILURE;
     }
 
     signal_event = evsignal_new(base, SIGINT, signal_cb, (void *)base);

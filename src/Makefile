@@ -67,7 +67,7 @@ $(PROJ).dep: $(SRCS)
 
 #
 # Append specific CFLAGS/LDFLAGS
-DEBUG := $(shell grep "^\#define CONFIG_DEBUG" config.h)
+DEBUG := $(shell grep "^#define CONFIG_DEBUG" config.h)
 ifeq ($(DEBUG),)
 TARGET	:= RELEASE
 CFLAGS	+= $(CFLAGS_REL)
