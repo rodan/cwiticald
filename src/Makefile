@@ -15,8 +15,8 @@ PROJ = cwiticald
 #CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall -Wno-switch
 #CFLAGS		+= -fno-force-addr -finline-limit=1 -fno-schedule-insns
 #CFLAGS		+= -fshort-enums -Wl,-Map=output.map
-CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall
-LDFLAGS		= -lpthread -levent_core
+CFLAGS		+= $(CC_CMACH) $(CC_DMACH) -Wall $(shell pkg-config --cflags libevent)
+LDFLAGS		= -lpthread $(shell pkg-config --libs libevent)
 
 CFLAGS_REL	+= -O2 -pipe
 #LDFLAGS_REL	+= -Wl,--gc-sections -Wl,-s
@@ -28,8 +28,8 @@ CFLAGS_DBG	+= -O1 -g
 INCLUDES	+= -I./ -Igcc/
 ### Build tools
 # 
-CC		= gcc
-LD		= ld
+CC		= cc
+LD		= cc
 AS		= as
 AR		= ar
 
@@ -45,7 +45,7 @@ COVERITY_SCAN_TOKEN := $(shell cat ../.secrets.COVERITY_SCAN_TOKEN)
 .PHONY: tags
 .PHONY: force
 
-all: depend config.h version.h tags $(PROJ)
+all: depend config.h version.h $(PROJ)
 
 #
 # Build list of sources and objects to build
