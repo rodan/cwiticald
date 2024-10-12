@@ -9,7 +9,7 @@
 
 LIBEVENT_EXPORT struct event_base *evbase;
 
-void libevent_glue(void);
+int libevent_glue(void);
 void stop_libevent(struct event_base *base);
 
 #endif

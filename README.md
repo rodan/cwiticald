@@ -49,6 +49,27 @@ install -m 755 ./cwiticald /usr/sbin/
 install -m 644 ../doc/cwiticald.1 /usr/share/man/man1/
 ```
 
+the serial connection needs to be configured via stty:
+
+for Linux
+
+```
+cat << EOF > /etc/udev/rules.d
+# ubld.it TrueRNG
+#
+# This rule creates a symlin to newly attached CDC-ACM device
+# Also includes fix for wrong termios settings on some linux kernels
+SUBSYSTEM=="tty", ATTRS{product}=="TrueRNG", MODE="0640", GROUP="rngd", SYMLINK+="truerng", RUN+="/bin/stty raw -echo -ixoff -F /dev/%k speed 3000000"
+ATTRS{idVendor}=="04d8", ATTRS{idProduct}=="f5fe", ENV{ID_MM_DEVICE_IGNORE}="1"
+EOF
+```
+
+for FreeBSD:
+
+```
+stty -f /dev/cuaU0.init raw -echo -ixoff speed 3000000
+```
+
 ### Usage
 
 a manual is provided

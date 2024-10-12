@@ -246,6 +246,7 @@ void parse_options(int argc, char **argv)
 int main(int argc, char **argv)
 {
     pthread_t harvest_thread;
+    int el;
 
     if (signal(SIGINT, sig_handler) == SIG_ERR) {
         fprintf(stderr, "\ncan't catch SIGINT\n");
@@ -270,7 +271,9 @@ int main(int argc, char **argv)
     usleep(200000);
     // networking loop
     if (keep_running) {
-        libevent_glue();
+        el = libevent_glue();
+        if (el)
+            fprintf(stderr, "warning: libevent_glue returned %d\n", el);
     }
     // set in case libevent_glue return due to any error
     keep_running = 0;

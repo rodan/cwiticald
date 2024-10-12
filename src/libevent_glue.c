@@ -3,10 +3,13 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
-#include <event2/event.h>
-#include <event2/buffer.h>
 #include <event2/bufferevent.h>
+#include <event2/buffer.h>
+#include <event2/listener.h>
+#include <event2/util.h>
+#include <event2/event.h>
 
 #include <assert.h>
 #include <unistd.h>
@@ -179,12 +182,10 @@ void error_cb(struct bufferevent *bev, short error, void *ctx)
     bufferevent_free(bev);
 }
 
-void do_accept(evutil_socket_t listener, short event, void *arg)
+static void listener_cb(struct evconnlistener *listener, evutil_socket_t fd,
+    struct sockaddr *sa, int socklen, void *user_data)
 {
-    struct event_base *base = arg;
-    struct sockaddr_storage ss;
-    socklen_t slen = sizeof(ss);
-    int fd = accept(listener, (struct sockaddr *)&ss, &slen);
+    struct event_base *base = user_data;
     if (fd < 0) {
         perror("accept");
     } else if (fd > FD_SETSIZE) {
@@ -199,73 +200,78 @@ void do_accept(evutil_socket_t listener, short event, void *arg)
     }
 }
 
-void libevent_glue(void)
+static void
+signal_cb(evutil_socket_t sig, short events, void *user_data)
 {
-    evutil_socket_t listener;
+    struct event_base *base = user_data;
+    struct timeval delay = { 2, 0 };
+
+    printf("Caught an interrupt signal; exiting cleanly in two seconds.\n");
+
+    event_base_loopexit(base, &delay);
+}
+
+int libevent_glue(void)
+{
+    struct evconnlistener *listener;
     struct sockaddr_in s4;
     struct sockaddr_in6 s6;
     struct sockaddr_storage ss;
     struct event_base *base;
-    struct event *listener_event;
+    struct event *signal_event;
+    int ret = EXIT_FAILURE;
 
     base = event_base_new();
     evbase = base;
     if (!base)
-        return;
+        return ret;
 
     memset(&s4, 0, sizeof(struct sockaddr_in));
     memset(&s6, 0, sizeof(struct sockaddr_in6));
     memset(&ss, 0, sizeof(struct sockaddr_storage));
 
-    if ( strlen(ip4) > 0 ) {
-        s4.sin_family = AF_INET;
-        inet_pton(AF_INET, ip4, &(s4.sin_addr));
-        s4.sin_port = htons(port);
-        memcpy (&ss, &s4, sizeof (s4));
-    } 
-
     if ( strlen(ip6) > 0 ) {
         s6.sin6_family = AF_INET6;
         inet_pton(AF_INET6, ip6, &(s6.sin6_addr));
         s6.sin6_port = htons(port);
-        memcpy (&ss, &s6, sizeof (s6));
-    }
+        //memcpy (&ss, &s6, sizeof (s6));
 
-    listener = socket(ss.ss_family, SOCK_STREAM, 0);
+        listener = evconnlistener_new_bind(base, listener_cb, (void *)base,
+                                           LEV_OPT_REUSEABLE|LEV_OPT_CLOSE_ON_FREE, -1,
+                                           (struct sockaddr*)&s6, sizeof(s6));
 
-    if (listener < 0) {
-        perror("socket() failed");
-        return;
-    }
-    evutil_make_socket_nonblocking(listener);
+        if (!listener) {
+            fprintf(stderr, "Could not create an ipv6 listener!\n");
+            return ret;
+        }
+    } else if ( strlen(ip4) > 0 ) {
+        s4.sin_family = AF_INET;
+        inet_pton(AF_INET, ip4, &(s4.sin_addr));
+        s4.sin_port = htons(port);
 
-#ifndef WIN32
-    {
-        int one = 1;
-        if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) == -1) {
-            perror("setsockopt() failed");
-            return;
+        listener = evconnlistener_new_bind(base, listener_cb, (void *)base,
+                                           LEV_OPT_REUSEABLE|LEV_OPT_CLOSE_ON_FREE, -1,
+                                           (struct sockaddr*)&s4, sizeof(s4));
+
+        if (!listener) {
+            fprintf(stderr, "Could not create an ipv4 listener!\n");
+            return ret;
         }
     }
-#endif
 
-    if (bind(listener, (struct sockaddr *)&ss, sizeof(ss)) < 0) {
-        perror("bind failed");
-        return;
+    signal_event = evsignal_new(base, SIGINT, signal_cb, (void *)base);
+    if (!signal_event || event_add(signal_event, NULL)<0) {
+        fprintf(stderr, "Could not create/add a signal event!\n");
+        return ret;
     }
-
-    if (listen(listener, 16) < 0) {
-        perror("listen failed");
-        return;
-    }
-
-    listener_event =
-        event_new(base, listener, EV_READ | EV_PERSIST, do_accept,
-                  (void *)base);
-
-    event_add(listener_event, NULL);
 
     event_base_dispatch(base);
+
+    evconnlistener_free(listener);
+    event_free(signal_event);
+    event_base_free(base);
+
+    return EXIT_SUCCESS;
 }
 
 void stop_libevent(struct event_base *base)
